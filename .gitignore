@@ -1,0 +1,8 @@
+node_modules
+dist
+dev-dist
+public/ort
+test-results
+playwright-report
+review
+review2

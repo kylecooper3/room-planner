@@ -1,0 +1,79 @@
+/* Calibrate tool prompt (floats over the plan) */
+.fp-panel {
+  position: fixed; top: 72px; left: 50%; transform: translateX(-50%); z-index: 50;
+  display: flex; flex-direction: column; gap: 8px; min-width: 260px; max-width: min(460px, calc(100vw - 32px));
+  padding: 12px 14px; background: var(--panel); color: var(--ink); border: 2px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow); font-family: var(--font); font-size: 13px;
+}
+.fp-panel-row { display: flex; gap: 8px; justify-content: flex-end; }
+.fp-hint { color: var(--muted); font-size: 12px; }
+
+/* Docked "Trace floor plan" panel */
+.fp-dock {
+  width: 310px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; overflow-y: auto;
+  background: var(--panel); border-right: 2px solid var(--line); font-size: 13px;
+}
+.fp-dock.collapsed { width: auto; padding: 8px 6px; }
+.fp-expand { flex-direction: column; padding: 10px 6px; font-size: 18px; }
+.fp-expand span { font-size: 11px; }
+.fp-dock-head { display: flex; align-items: center; gap: 4px; }
+.fp-dock-head h2 { flex: 1; margin: 0; font-size: 16px; }
+.fp-icon { padding: 2px 9px; }
+.fp-steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.fp-step { border: 1.5px solid var(--line); border-radius: 12px; background: #fff; }
+.fp-step.current { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.fp-step-head {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 0; background: none;
+  font: inherit; font-weight: 700; color: var(--ink); text-align: left; cursor: pointer;
+}
+.fp-step:not(.current) .fp-step-head { color: var(--muted); font-weight: 600; }
+.fp-badge {
+  display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; flex-shrink: 0;
+  border-radius: 50%; border: 2px solid var(--line); font-size: 12px; font-weight: 700; color: var(--muted);
+}
+.fp-step.current .fp-badge { background: var(--accent); border-color: var(--accent); color: #fff; }
+.fp-step.done:not(.current) .fp-badge { background: var(--ok); border-color: var(--ok); color: #fff; }
+.fp-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.fp-step-body { display: flex; flex-direction: column; gap: 8px; padding: 0 10px 10px; }
+.fp-step-body p { margin: 0; }
+.fp-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.fp-tip { color: var(--muted); font-size: 12px; }
+.fp-now { padding: 6px 10px; border-radius: 8px; background: var(--accent-soft); font-weight: 600; }
+.fp-scale { padding: 6px 8px; border-radius: 8px; background: var(--bg); font-size: 12px; }
+.fp-choice { flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 8px 10px; }
+.fp-choice small { color: var(--muted); font-size: 11.5px; line-height: 1.35; }
+.fp-area { display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 10px; background: var(--bg); }
+.fp-input { padding: 6px 8px; border: 1.5px solid var(--line); border-radius: 8px; font: inherit; color: var(--ink); background: #fff; }
+.fp-check { display: inline-flex; gap: 4px; align-items: center; }
+.fp-pick { position: relative; overflow: hidden; }
+.fp-pick input { position: absolute; inset: 0; opacity: 0; cursor: pointer; font-size: 0; }
+.fp-naming { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 10px; background: #e3f4ea; }
+.fp-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.fp-chip {
+  padding: 4px 10px; border: 1.5px solid var(--line); border-radius: 999px; background: #fff; color: var(--ink);
+  font: inherit; font-size: 12px; cursor: pointer;
+}
+.fp-chip:hover { border-color: var(--accent); }
+.fp-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.fp-rooms { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.fp-rooms li { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 8px; }
+.fp-rooms li.active { background: var(--accent-soft); }
+.fp-room-name { flex: 1; min-width: 0; padding: 0; border: 0; background: none; font: inherit; font-weight: 600; color: var(--ink); text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fp-room-area { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.fp-x { border: 0; background: none; color: var(--muted); cursor: pointer; font: inherit; padding: 2px 4px; }
+.fp-x:hover { color: var(--danger); }
+.fp-total { font-size: 13px; }
+.fp-compare { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 8px; border-radius: 10px; background: var(--bg); font-size: 12px; }
+.fp-compare .ok { color: var(--ok); }
+.fp-proposals { display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 10px; background: #e5f2fb; }
+.fp-tips { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+
+/* Drop zone over the plan (no image yet, or while dragging a file in) */
+.fp-drop { position: absolute; inset: 0; z-index: 6; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(251, 246, 238, 0.82); }
+.fp-drop-card {
+  display: flex; flex-direction: column; align-items: center; gap: 8px; width: min(440px, 100%); padding: 36px 24px;
+  border: 3px dashed var(--accent); border-radius: 22px; background: var(--panel); text-align: center; color: var(--muted);
+}
+.fp-drop-card strong { color: var(--ink); font-size: 18px; }
+.fp-drop.over .fp-drop-card { background: var(--accent-soft); transform: scale(1.02); }
+.fp-drop-icon { font-size: 44px; }
