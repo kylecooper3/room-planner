@@ -96,6 +96,16 @@ describe('intersection tests', () => {
     expect(polygonInsideRoom(itemPolygon({ x: 185, y: 185, rotation: 45 }, { w: 56.5685, d: 56.5685, h: 1 }), L)).toBe(false);
     expect(polygonInsideRoom(itemPolygon({ x: 150, y: 150, rotation: 45 }, { w: 56.5685, d: 56.5685, h: 1 }), L)).toBe(true);
   });
+  test('polygonInsideRoom rejects an item a wall notch cuts across, keeps flush items', () => {
+    // 400×300 room with a 40 cm wide chimney breast sticking 100 cm in from the top wall (x 180..220, y 0..100).
+    const notched = [{ x: 0, y: 0 }, { x: 180, y: 0 }, { x: 180, y: 100 }, { x: 220, y: 100 }, { x: 220, y: 0 }, { x: 400, y: 0 },
+      { x: 400, y: 300 }, { x: 0, y: 300 }];
+    // Sofa from y 40 to 120: all four corners in the room, but the breast pierces its back edge.
+    const sofa = [{ x: 100, y: 40 }, { x: 300, y: 40 }, { x: 300, y: 120 }, { x: 100, y: 120 }];
+    expect(polygonInsideRoom(sofa, notched)).toBe(false);
+    // Flush against the breast's face and the bottom wall.
+    expect(polygonInsideRoom([{ x: 100, y: 100 }, { x: 300, y: 100 }, { x: 300, y: 300 }, { x: 100, y: 300 }], notched)).toBe(true);
+  });
 });
 
 test('projectOnWalls and snapRightAngle', () => {

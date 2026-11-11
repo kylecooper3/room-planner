@@ -140,10 +140,27 @@ const distToBoundary = (p: Vec2, poly: Polygon) => {
   return d;
 };
 
+/** Signed distance of p from the line through a→b. */
+const sideOf = (p: Vec2, a: Vec2, b: Vec2) => {
+  const ab = sub(b, a), l = len(ab);
+  return l < EPS ? 0 : (ab.x * (p.y - a.y) - ab.y * (p.x - a.x)) / l;
+};
+/** Each segment's endpoints lie on opposite sides of the other's line, by at least TOUCH_TOL (touching/flush never counts). */
+const segmentsCross = (a: Vec2, b: Vec2, c: Vec2, d: Vec2) => {
+  const opposite = (u: number, v: number) => u * v < 0 && Math.min(Math.abs(u), Math.abs(v)) >= TOUCH_TOL;
+  return opposite(sideOf(a, c, d), sideOf(b, c, d)) && opposite(sideOf(c, a, b), sideOf(d, a, b));
+};
+
 export const polygonInsideRoom: PolygonInsideRoom = (poly, room) => {
   for (const p of poly) if (!pointInPolygon(p, room) && distToBoundary(p, room) >= TOUCH_TOL) return false;
-  // With every corner inside, the only way out is a (reflex) room corner poking into the polygon.
+  // With every corner inside, the polygon can still leave the room where a reflex room corner pokes into it...
   for (const r of room) if (pointInPolygon(r, poly) && distToBoundary(r, poly) >= TOUCH_TOL) return false;
+  // ...or where a wall cuts right across it (e.g. a notch whose corners both lie beyond the polygon).
+  for (let i = 0; i < poly.length; i++) {
+    for (let j = 0; j < room.length; j++) {
+      if (segmentsCross(poly[i], poly[(i + 1) % poly.length], room[j], room[(j + 1) % room.length])) return false;
+    }
+  }
   return true;
 };
 

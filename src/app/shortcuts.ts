@@ -1,4 +1,5 @@
 import type { AppState, PlacedItem, Room, ViewMode } from '../types';
+import { deleteCorner as deleteRoomCorner } from '../editor2d/wallEdit';
 
 /** The subset of KeyboardEvent the shortcut table reads (lets tests pass plain objects). */
 export type KeyInput = Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey' | 'target'>;
@@ -26,13 +27,10 @@ export const selectedItem = (s: AppState): PlacedItem | undefined => {
 };
 export const normDeg = (deg: number) => ((deg % 360) + 360) % 360;
 
-/** Removes a room corner (only when more than 3 remain). Shared by the Delete key and the Inspector. */
+/** Removes a room corner (only when more than 3 remain), re-indexing openings. Shared by the Delete key and the Inspector. */
 export function deleteCorner(s: AppState, index: number): boolean {
   const room = activeRoom(s);
-  if (!room || room.points.length <= 3) return false;
-  s.updateRoom(room.id, { points: room.points.filter((_, i) => i !== index) });
-  s.select(null);
-  return true;
+  return !!room && deleteRoomCorner(s, room, index);
 }
 
 /** Deletes the selected item / opening / corner (a selected wall: nothing). */

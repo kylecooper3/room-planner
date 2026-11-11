@@ -15,9 +15,9 @@ type Toggle = 'showGrid' | 'snap' | 'showClearances' | 'cutaway' | 'walkMode';
 const s = () => useStore.getState();
 const closeMenu = (e: MouseEvent) => e.currentTarget.closest('details')?.removeAttribute('open');
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const fileName = (name: string, ext: string) => `${(name.trim() || 'room-plan').replace(/[\\/:*?"<>|]+/g, '-')}${ext}`;
+export const fileName = (name: string, ext: string) => `${(name.trim() || 'room-plan').replace(/[\\/:*?"<>|]+/g, '-')}${ext}`;
 
-function download(blob: Blob, name: string) {
+export function download(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -155,7 +155,7 @@ export function Toolbar() {
           onChange={(e) => {
             const file = e.target.files?.[0];
             e.target.value = '';
-            if (file) void run('Import', async () => { s().replaceProject(await importProject(file)); setNote({ text: `Opened ${file.name}` }); });
+            if (file && confirm('Open this project file? It replaces the current project, and unsaved work will be lost.')) void run('Import', async () => { s().replaceProject(await importProject(file)); setNote({ text: `Opened ${file.name}` }); });
           }}
         />
         <button className="btn" title="Help and shortcuts (?)" aria-label="Help" data-testid="open-help" onClick={() => s().setUI({ dialog: 'help' })}>?</button>

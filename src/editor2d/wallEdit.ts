@@ -32,3 +32,34 @@ export function insertCorner(st: Pick<Actions, 'beginBatch' | 'endBatch' | 'upda
   st.endBatch();
   st.select({ type: 'corner', index: i + 1 });
 }
+
+/**
+ * Removes corner k (only when more than 3 remain) as ONE undo step, the inverse of insertCorner: walls k-1 and k merge into
+ * one wall from points[k-1] to points[k+1]; their openings are projected onto it (dropped only if wider than it), later
+ * walls shift down by one. Corner 0 wraps: the merged wall becomes the last wall.
+ */
+export function deleteCorner(st: Pick<Actions, 'beginBatch' | 'endBatch' | 'updateOpening' | 'deleteOpening' | 'updateRoom' | 'select'>, room: Room, k: number): boolean {
+  const pts = room.points, n = pts.length;
+  if (n <= 3 || k < 0 || k >= n) return false;
+  const prev = (k - 1 + n) % n;
+  const a = pts[prev], b = pts[(k + 1) % n];
+  const len = Math.hypot(b.x - a.x, b.y - a.y);
+  const merged = k === 0 ? n - 2 : k - 1;
+  st.beginBatch();
+  for (const o of room.openings) {
+    if (o.wall !== k && o.wall !== prev) {
+      if (o.wall > k) st.updateOpening(o.id, { wall: o.wall - 1 });
+      continue;
+    }
+    if (o.width > len) { st.deleteOpening(o.id); continue; }
+    const s = pts[o.wall], e = pts[(o.wall + 1) % n];
+    const wl = Math.hypot(e.x - s.x, e.y - s.y) || 1;
+    const c = { x: s.x + ((e.x - s.x) / wl) * o.offset, y: s.y + ((e.y - s.y) / wl) * o.offset };
+    const along = ((c.x - a.x) * (b.x - a.x) + (c.y - a.y) * (b.y - a.y)) / (len || 1);
+    st.updateOpening(o.id, { wall: merged, offset: Math.min(Math.max(along, o.width / 2), len - o.width / 2) });
+  }
+  st.updateRoom(room.id, { points: pts.filter((_, i) => i !== k) });
+  st.endBatch();
+  st.select(null);
+  return true;
+}

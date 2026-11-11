@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { snapPoint, type InkSnap } from './drawSnap';
-import { insertCorner, setWallLength } from './wallEdit';
+import { deleteCorner, insertCorner, setWallLength } from './wallEdit';
 import type { Room } from '../types';
 
 const square = [{ x: 0, y: 0 }, { x: 400, y: 0 }, { x: 400, y: 300 }, { x: 0, y: 300 }];
@@ -61,5 +61,44 @@ describe('insertCorner', () => {
     };
     insertCorner(st, room, 0, 0.5);
     expect(calls).toEqual(['begin', 'a:{"wall":1,"offset":100}', 'b:{"wall":3}', 'room:5', 'end', 'select']);
+  });
+});
+
+describe('deleteCorner', () => {
+  // Pentagon-ish: square with an extra corner (200,0) splitting the top wall.
+  const pts = [{ x: 0, y: 0 }, { x: 200, y: 0 }, { x: 400, y: 0 }, { x: 400, y: 300 }, { x: 0, y: 300 }];
+  const run = (k: number, openings: object[]) => {
+    const calls: string[] = [];
+    const room = { id: 'r', points: pts, openings } as unknown as Room;
+    const st = {
+      beginBatch: () => calls.push('begin'), endBatch: () => calls.push('end'),
+      updateOpening: (id: string, p: object) => calls.push(`${id}:${JSON.stringify(p)}`),
+      deleteOpening: (id: string) => calls.push(`del:${id}`),
+      updateRoom: (_: string, p: { points?: unknown[] }) => calls.push(`room:${p.points?.length}`),
+      select: () => calls.push('select'),
+    };
+    return { ok: deleteCorner(st, room, k), calls };
+  };
+  it('merges the two walls onto one and shifts later walls down, in one batch', () => {
+    const { ok, calls } = run(1, [
+      { id: 'a', wall: 0, offset: 50, width: 80 }, { id: 'b', wall: 1, offset: 100, width: 80 },
+      { id: 'c', wall: 3, offset: 10, width: 10 }, { id: 'big', wall: 1, offset: 100, width: 500 },
+    ]);
+    expect(ok).toBe(true);
+    expect(calls).toEqual(['begin', 'a:{"wall":0,"offset":50}', 'b:{"wall":0,"offset":300}', 'c:{"wall":2}', 'del:big', 'room:4', 'end', 'select']);
+  });
+  it('wraps around when deleting corner 0: the merged wall is the last one', () => {
+    // Deleting (0,0) merges wall 4 ((0,300)→(0,0)) and wall 0 ((0,0)→(200,0)) into (0,300)→(200,0), length 360.
+    const { calls } = run(0, [{ id: 'a', wall: 4, offset: 300, width: 20 }, { id: 'b', wall: 0, offset: 100, width: 20 }, { id: 'c', wall: 2, offset: 5, width: 1 }]);
+    expect(calls[1]).toMatch(/^a:\{"wall":3,"offset":/);
+    expect(JSON.parse(calls[1].slice(2)).offset).toBeCloseTo(249.6, 1); // centre (0,0) projected onto the merged wall
+    expect(calls[2]).toMatch(/^b:\{"wall":3,"offset":/);
+    expect(JSON.parse(calls[2].slice(2)).offset).toBeCloseTo(305.1, 1); // centre (100,0)
+    expect(calls.slice(3)).toEqual(['c:{"wall":1}', 'room:4', 'end', 'select']);
+  });
+  it('refuses to go below 3 corners', () => {
+    expect(run(0, []).ok).toBe(true);
+    const tri = { id: 'r', points: pts.slice(0, 3), openings: [] } as unknown as Room;
+    expect(deleteCorner({} as never, tri, 0)).toBe(false);
   });
 });

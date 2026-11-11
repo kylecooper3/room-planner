@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { del, get, set } from 'idb-keyval';
+import { del, get, keys, set } from 'idb-keyval';
 import type { DeleteBlob, GetBlob, PutBlob } from '../types';
 
-const key = (id: string) => `room-planner/blob/${id}`;
+const PREFIX = 'room-planner/blob/';
+const key = (id: string) => `${PREFIX}${id}`;
 // Stored as bytes + type: structured cloning of Blob is not reliable across all IndexedDB implementations.
 interface StoredBlob { type: string; data: ArrayBuffer }
 
@@ -21,6 +22,16 @@ export const getBlob: GetBlob = async (id) => {
   return stored ? new Blob([stored.data], { type: stored.type }) : undefined;
 };
 export const deleteBlob: DeleteBlob = (id) => del(key(id));
+
+/** Ids of stored blobs (from IndexedDB keys) that `referenced` does not mention. */
+export const orphanBlobIds = (storeKeys: IDBValidKey[], referenced: string[]): string[] => {
+  const keep = new Set(referenced);
+  return storeKeys.flatMap((k) => (typeof k === 'string' && k.startsWith(PREFIX) && !keep.has(k.slice(PREFIX.length)) ? [k.slice(PREFIX.length)] : []));
+};
+/** Deletes every stored blob not in `referenced`. Only safe when nothing else (undo history, another tab) can refer to a blob. */
+export const deleteOrphanBlobs = async (referenced: string[]): Promise<void> => {
+  for (const id of orphanBlobIds(await keys(), referenced)) await deleteBlob(id);
+};
 
 /** Object URL for a stored blob (undefined while loading / when missing). Revoked automatically. */
 export const useBlobUrl = (id: string | undefined | null): string | undefined => {

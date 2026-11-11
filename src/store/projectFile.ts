@@ -1,5 +1,5 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
-import type { ExportProject, ImportProject, Project } from '../types';
+import { CATEGORIES, MATERIALS, PART_ROLES, type ExportProject, type ImportProject, type Project } from '../types';
 import { getBlob, putBlobWithId } from './blobs';
 
 export const PROJECT_FILE_EXTENSION = '.roomplan';
@@ -8,15 +8,46 @@ const VERSION = 1;
 
 interface ProjectFileJson { format: string; version: number; project: Project; blobTypes: Record<string, string> }
 
-/** Basic shape check for a project coming from outside (file or storage). */
-export const isProject = (p: unknown): p is Project => {
-  const o = p as Partial<Project> | null;
-  return !!o && typeof o === 'object' && o.version === 1 && Array.isArray(o.rooms) && Array.isArray(o.library)
-    && (o.units === 'imperial' || o.units === 'metric');
-};
+// Deep enough that nothing in the render path (2D, 3D, issues) can crash on data from a file or storage.
+type Obj = Record<string, unknown>;
+const isObj = (v: unknown): v is Obj => !!v && typeof v === 'object' && !Array.isArray(v);
+const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const pos = (v: unknown): v is number => num(v) && v > 0;
+const str = (v: unknown): v is string => typeof v === 'string';
+const arr = (v: unknown, f: (x: unknown) => boolean): v is unknown[] => Array.isArray(v) && v.every(f);
+const oneOf = <T extends string>(v: unknown, xs: readonly T[]): v is T => xs.includes(v as T);
+const isVec = (v: unknown) => isObj(v) && num(v.x) && num(v.y);
+const isOpening = (n: number) => (v: unknown) => isObj(v) && str(v.id) && oneOf(v.kind, ['door', 'window', 'outlet', 'radiator'] as const)
+  && Number.isInteger(v.wall) && (v.wall as number) >= 0 && (v.wall as number) < n
+  && num(v.offset) && pos(v.width) && num(v.height) && num(v.sill)
+  && (v.swing === undefined || (isObj(v.swing) && oneOf(v.swing.hinge, ['start', 'end'] as const) && oneOf(v.swing.side, ['in', 'out'] as const)));
+const isItem = (v: unknown) => isObj(v) && str(v.id) && str(v.defId) && num(v.x) && num(v.y) && num(v.rotation);
+const isLayout = (v: unknown) => isObj(v) && str(v.id) && str(v.name) && arr(v.items, isItem);
+const isRoom = (v: unknown) => isObj(v) && str(v.id) && str(v.name) && arr(v.points, isVec) && v.points.length >= 3
+  && pos(v.ceilingHeight) && num(v.wallThickness) && v.wallThickness >= 0 && str(v.wallColor)
+  && oneOf(v.floor, ['wood', 'carpet', 'tile'] as const)
+  && arr(v.openings, isOpening(v.points.length)) && arr(v.layouts, isLayout) && v.layouts.length >= 1 && str(v.activeLayoutId);
+const isModel = (v: unknown) => isObj(v) && (v.kind === 'mesh' ? str(v.meshId)
+  : v.kind === 'parametric' && oneOf(v.category, CATEGORIES) && oneOf(v.material, MATERIALS)
+    && isObj(v.style) && Object.values(v.style).every((x) => ['number', 'string', 'boolean'].includes(typeof x))
+    && isObj(v.colors) && PART_ROLES.every((r) => str((v.colors as Obj)[r])));
+const isClearance = (v: unknown) => isObj(v) && oneOf(v.kind, ['drawer', 'chair', 'walkway', 'access'] as const)
+  && oneOf(v.side, ['front', 'back', 'left', 'right'] as const) && num(v.depth) && str(v.label);
+const isDef = (v: unknown) => isObj(v) && str(v.id) && str(v.name) && isObj(v.size) && pos(v.size.w) && pos(v.size.d) && pos(v.size.h)
+  && isModel(v.model) && arr(v.clearances, isClearance) && oneOf(v.source, ['preset', 'user'] as const)
+  && (v.photoId === undefined || str(v.photoId));
+const isUnderlay = (v: unknown) => v === null || (isObj(v) && str(v.imageId) && pos(v.widthPx) && pos(v.heightPx) && pos(v.cmPerPx)
+  && num(v.x) && num(v.y) && num(v.opacity) && typeof v.visible === 'boolean');
 
-const referencedBlobIds = (p: Project): string[] => [
-  ...new Set([p.underlay?.imageId, ...p.library.map((d) => d.photoId)].filter((id): id is string => !!id)),
+/** Shape check for a project coming from outside (file or storage). Placed items whose def is missing are skipped by renderers. */
+export const isProject = (p: unknown): p is Project => isObj(p) && p.version === 1 && str(p.name)
+  && oneOf(p.units, ['imperial', 'metric'] as const) && arr(p.rooms, isRoom) && arr(p.library, isDef)
+  && (p.activeRoomId === null || str(p.activeRoomId)) && (p.underlay === undefined || isUnderlay(p.underlay));
+
+/** Every blob-store id a project refers to (underlay image, photos and meshes of "My stuff" items). */
+export const referencedBlobIds = (p: Project): string[] => [
+  ...new Set([p.underlay?.imageId, ...p.library.flatMap((d) => [d.photoId, d.model.kind === 'mesh' ? d.model.meshId : undefined])]
+    .filter((id): id is string => !!id)),
 ];
 
 export const exportProject: ExportProject = async (project) => {

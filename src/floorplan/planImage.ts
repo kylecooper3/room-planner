@@ -1,5 +1,5 @@
 import { useStore } from '../store/store';
-import { deleteBlob, putBlob } from '../store/blobs';
+import { putBlob } from '../store/blobs';
 import type { Underlay, Vec2 } from '../types';
 import { detectRooms } from './detectWalls';
 import { loadImageData } from './inkMask';
@@ -16,10 +16,8 @@ export async function addPlanImage(file: File): Promise<string | null> {
     bmp.close();
     const imageId = await putBlob(file);
     const st = useStore.getState();
-    const prev = st.project.underlay;
     st.setUnderlay({ imageId, widthPx: width, heightPx: height, cmPerPx: defaultCmPerPx(width), x: 0, y: 0, opacity: 0.6, visible: true });
     useTrace.setState({ ...freshSession(), step: 2 });
-    if (prev) await deleteBlob(prev.imageId).catch(() => {});
     return null;
   } catch {
     return "Couldn't read that image. Try a PNG or JPG screenshot.";

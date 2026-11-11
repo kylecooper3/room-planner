@@ -94,6 +94,7 @@ test('persistence: autosave + reload, export/import with photo blob, PNG exports
   fresh.on('pageerror', (e) => errors.push(e.message));
   await open(fresh);
   expect((await state(fresh)).project.rooms).toHaveLength(0);
+  fresh.once('dialog', (d) => d.accept());
   await fresh.getByTestId('import-file').setInputFiles({ name: 'home.roomplan', mimeType: 'application/zip', buffer: archive.bytes });
   await expect(fresh.getByTestId('toolbar-note')).toContainText('Opened home.roomplan');
   const imported = (await state(fresh)).project;

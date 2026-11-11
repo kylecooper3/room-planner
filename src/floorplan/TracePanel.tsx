@@ -1,6 +1,5 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 import { useStore } from '../store/store';
-import { deleteBlob } from '../store/blobs';
 import { formatArea } from '../core/units';
 import { polygonArea } from '../core/geometry';
 import type { OpeningKind, Room } from '../types';
@@ -156,11 +155,11 @@ export function TracePanel() {
     s().endBatch();
     useTrace.setState({ proposals: [] });
   };
-  const removePlan = async () => {
+  // The image blob is kept so undo can restore it; unreferenced blobs are cleaned up at the next startup.
+  const removePlan = () => {
     if (!u) return;
     s().setUnderlay(null);
     useTrace.setState(freshSession());
-    await deleteBlob(u.imageId).catch(() => {});
   };
   const placing = (kind: OpeningKind) => tool === 'place-opening' && openingKind === kind;
 
