@@ -208,3 +208,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the data flow and module boundaries.
   checking overlaps (e.g. a chair under a table counts as overlapping). Rugs are the only items that may be overlapped.
 - Performance has only been checked on the development machine.
 - Below about 700 px wide the side panels move below the view and the page scrolls; there is no dedicated touch UI.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
