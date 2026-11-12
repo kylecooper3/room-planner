@@ -21,6 +21,15 @@ Offline-capable build (the service worker only exists in the production build):
 npm run build && npm run preview
 ```
 
+### Install as a desktop app
+
+1. Run `npm run build && npm run preview` and open http://localhost:4173 in Chrome or Edge.
+2. Click the install icon at the right end of the address bar (or menu → "Install Room Planner").
+
+It then opens in its own window from the Start menu, taskbar or desktop, like any other app, and keeps working
+without the preview server running. Your project stays where it was (the same browser storage). To update it after
+pulling new code, run step 1 again and open the app once; it picks up the new version automatically.
+
 Tests:
 
 ```sh

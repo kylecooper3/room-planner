@@ -13,7 +13,12 @@ export default defineConfig({
     // Model weights are cached separately by transformers.js in the Cache API.
     VitePWA({
       registerType: 'autoUpdate',
-      manifest: { name: 'Room Planner', short_name: 'Room Planner', display: 'standalone', theme_color: '#f4a261', icons: [] },
+      manifest: { name: 'Room Planner', short_name: 'Room Planner', display: 'standalone', theme_color: '#f4a261', background_color: '#fff7ef',
+        icons: [
+          { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
+        ],
+      },
       workbox: {
         globPatterns: ['**/*.{js,mjs,css,html,wasm,png,svg,ico}'],
         maximumFileSizeToCacheInBytes: 64 * 1024 * 1024,
