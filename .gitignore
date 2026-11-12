@@ -6,3 +6,5 @@ test-results
 playwright-report
 review
 review2
+public/models
+src-tauri/target

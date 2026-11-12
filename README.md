@@ -21,14 +21,24 @@ Offline-capable build (the service worker only exists in the production build):
 npm run build && npm run preview
 ```
 
-### Install as a desktop app
+### Desktop app (Windows)
 
-1. Run `npm run build && npm run preview` and open http://localhost:4173 in Chrome or Edge.
-2. Click the install icon at the right end of the address bar (or menu → "Install Room Planner").
+A double-clickable Windows app (Tauri 2, uses the WebView2 runtime built into Windows 10/11). It runs fully offline:
+no server, nothing stored in your Chrome/Edge profile, and the photo models are bundled, so it never touches the network.
 
-It then opens in its own window from the Start menu, taskbar or desktop, like any other app, and keeps working
-without the preview server running. Your project stays where it was (the same browser storage). To update it after
-pulling new code, run step 1 again and open the app once; it picks up the new version automatically.
+Prerequisites (one-time): Node.js, Rust via [rustup](https://rustup.rs) (MSVC toolchain), and Visual Studio Build Tools
+with the "Desktop development with C++" workload (MSVC **and** a Windows 10/11 SDK).
+
+```sh
+npm.cmd run dist:win    # run from PowerShell or cmd (Git Bash's own link.exe shadows the MSVC linker)
+```
+
+This downloads the two models into `public/models/` if they are missing (about 160 MB, not committed), then builds
+`src-tauri/target/release/bundle/nsis/Room Planner_<version>_x64-setup.exe`. Run it to install (per user, no admin):
+it adds "Room Planner" to the Start menu and the desktop. Your project is stored in
+`%LOCALAPPDATA%\com.roomplanner.desktop\EBWebView` (uninstalling offers to delete it); use File → Export to keep a copy.
+
+`npm run desktop` opens the app in a window against the dev server, and `npm run e2e:desktop` smoke-tests the built exe.
 
 Tests:
 

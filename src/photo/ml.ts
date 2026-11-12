@@ -80,7 +80,12 @@ function modelLoader<T>(what: string, load: (cb: (info: Info) => void) => Promis
 
 const loadTF = once(async () => {
   const tf: TF = await import('@huggingface/transformers');
-  tf.env.allowLocalModels = false;
+  // Desktop (Tauri) build: models ship in /models (scripts/fetch-models.mjs) and are read from there, never from the network.
+  const desktop = '__TAURI_INTERNALS__' in window;
+  tf.env.allowLocalModels = desktop;
+  tf.env.allowRemoteModels = !desktop;
+  tf.env.useBrowserCache = !desktop; // already local files: no second copy in the Cache API
+  tf.env.localModelPath = import.meta.env.BASE_URL + 'models/';
   const wasm = tf.env.backends.onnx.wasm;
   if (wasm) {
     // Explicit, absolute URLs of the one runtime pair scripts/copy-ort.mjs ships (the vite config selects ORT's

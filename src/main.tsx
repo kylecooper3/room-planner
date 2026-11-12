@@ -9,4 +9,8 @@ import { useStore } from './store/store';
 (window as unknown as { __store: typeof useStore }).__store = useStore;
 
 void initPersistence();
+// Offline cache for the browser build only; the desktop app (Tauri) already serves every file locally.
+if (import.meta.env.PROD && 'serviceWorker' in navigator && !('__TAURI_INTERNALS__' in window)) {
+  window.addEventListener('load', () => { void navigator.serviceWorker.register('/sw.js', { scope: '/' }); });
+}
 createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>);
