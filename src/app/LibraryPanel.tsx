@@ -1,17 +1,30 @@
-import { AppWindow, Camera, ChevronDown, DoorOpen, Heater, Pencil, Plug, Plus, Search, SlidersHorizontal, SquareDashed, Trash } from 'lucide-react';
+import {
+  AppWindow, Archive, Armchair, Bed, Box, Camera, ChevronDown, DoorOpen, Heater, LampDesk, LampFloor, Pencil, Plug, Plus,
+  RectangleHorizontal, Rows3, Search, ShelvingUnit, SlidersHorizontal, Sofa, SquareDashed, Sprout, Trash, Tv, Utensils,
+} from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { polygonArea } from '../core/geometry';
 import { formatArea, formatLength } from '../core/units';
-import { bodyColor } from '../editor2d/view';
 import { PRESETS } from '../models/presets';
+import { useBlobUrl } from '../store/blobs';
 import { useStore } from '../store/store';
-import type { ItemDef, OpeningKind, UnitSystem } from '../types';
+import type { Category, ItemDef, OpeningKind, UnitSystem } from '../types';
 import { RenameInput } from './inputs';
 import { Menu, MenuItem } from './Menu';
 import { startOptions } from './WelcomeCard';
 
-const swatch = (def: ItemDef) => bodyColor(def, '#c9c4bc');
+const CATEGORY_ICON: Record<Category, typeof Bed> = {
+  bed: Bed, sofa: Sofa, armchair: Armchair, chair: Armchair, table: Utensils, desk: LampDesk, dresser: Rows3, nightstand: Archive,
+  shelf: ShelvingUnit, lamp: LampFloor, rug: RectangleHorizontal, plant: Sprout, tv: Tv, box: Box,
+};
+/** The neutral icon tile every sidebar row starts with. */
+const Tile = ({ children }: { children: ReactNode }) => <span className="app-tile" aria-hidden>{children}</span>;
+const DefTile = ({ def }: { def: ItemDef }) => {
+  const photo = useBlobUrl(def.photoId);
+  const Icon = def.model.kind === 'parametric' ? CATEGORY_ICON[def.model.category] : Box;
+  return <Tile>{photo ? <img src={photo} alt="" /> : <Icon size={15} />}</Tile>;
+};
 const category = (def: ItemDef) => (def.model.kind === 'parametric' ? def.model.category : 'other');
 const footprint = (def: ItemDef, u: UnitSystem) => `${formatLength(def.size.w, u)} × ${formatLength(def.size.d, u)}`;
 const sizeText = (def: ItemDef, u: UnitSystem) => `${footprint(def, u)} × ${formatLength(def.size.h, u)}`;
@@ -42,14 +55,14 @@ function RoomsSection() {
   return (
     <section className="app-rooms" aria-label="Rooms">
       <div className="app-section-head">
-        <h2>Rooms{rooms.length > 0 && ` · ${rooms.length}`}</h2>
-        <Menu label={<><Plus size={14} /> Add room</>} title="Add a room to this floor plan" testId="new-room" className="btn app-small" place="right">
+        <h2 className="app-heading">Rooms</h2>
+        <Menu label={<Plus size={16} />} title="Add a room" ariaLabel="Add room" testId="new-room" className="btn ghost icon app-small" place="right">
           {startOptions(view).map((o) => (
             <MenuItem key={o.id} icon={o.icon} label={o.label} hint={o.hint} testId={`new-room-${o.id}`} onClick={o.run} />
           ))}
         </Menu>
       </div>
-      {rooms.length === 0 && <p className="app-rooms-empty">No rooms yet. Add one to start.</p>}
+      {rooms.length === 0 && <p className="app-muted app-rooms-empty">No rooms yet. Add one to start.</p>}
       <ul className="app-rooms-list" data-testid="rooms-list">
         {rooms.map((r) => (
           <li key={r.id} className={`app-room-row${r.id === activeId ? ' active' : ''}`} data-testid="room-row" data-room-id={r.id}>
@@ -59,11 +72,11 @@ function RoomsSection() {
               <>
                 <button className="app-room-main" aria-current={r.id === activeId ? 'true' : undefined} title={`Open ${r.name} (double-click to rename)`}
                   onClick={() => s().setActiveRoom(r.id)} onDoubleClick={() => setRenaming(r.id)}>
-                  <SquareDashed size={15} />
-                  <span className="app-room-name">{r.name}</span>
-                  <span className="app-room-area">{formatArea(polygonArea(r.points), units)}</span>
+                  <Tile><SquareDashed size={15} /></Tile>
+                  <span className="app-row-name">{r.name}</span>
+                  <span className="app-row-meta">{formatArea(polygonArea(r.points), units)}</span>
                 </button>
-                <span className="app-room-actions">
+                <span className="app-row-actions">
                   <button className="btn ghost app-small icon" title="Rename room" aria-label={`Rename ${r.name}`} data-testid="room-rename" onClick={() => setRenaming(r.id)}><Pencil size={13} /></button>
                   <button className="btn ghost app-small icon danger" title="Delete room" aria-label={`Delete ${r.name}`} data-testid="room-delete"
                     onClick={() => confirm(`Delete "${r.name}" and all its layouts?`) && s().deleteRoom(r.id)}><Trash size={13} /></button>
@@ -97,7 +110,7 @@ export function LibraryPanel() {
           My stuff{library.length > 0 && <span className="app-tab-count">{library.length}</span>}
         </button>
       </div>
-      {!hasRoom && <p className="note app-lib-hint">Add a room to start placing furniture.</p>}
+      {!hasRoom && <p className="app-muted app-lib-hint">Add a room to start placing furniture.</p>}
 
       {tab === 'furniture' ? (
         <>
@@ -110,16 +123,16 @@ export function LibraryPanel() {
             {groups.length === 0 && fixtures.length === 0 && <p className="app-empty">Nothing matches “{query}”.</p>}
             {groups.map(([cat, defs]) => (
               <section key={cat}>
-                <h3 className="app-lib-cat">{CATEGORY_LABEL[cat] ?? cat}</h3>
+                <h3 className="app-heading app-lib-cat">{CATEGORY_LABEL[cat] ?? cat}</h3>
                 {defs.map((def) => (
                   <button
                     key={def.id} className="app-lib-row" data-testid="lib-item" data-def-id={def.id} disabled={!hasRoom}
                     title={noRoomHint ?? `Add ${def.name} (${sizeText(def, units)}) to the room`} onClick={() => s().placeItem(def.id)}
                   >
-                    <span className="app-swatch" style={{ background: swatch(def) }} aria-hidden />
-                    <span className="app-lib-name">{def.name}</span>
-                    <span className="app-lib-size">{footprint(def, units)}</span>
-                    <span className="app-lib-add" aria-hidden><Plus size={15} /></span>
+                    <DefTile def={def} />
+                    <span className="app-row-name">{def.name}</span>
+                    <span className="app-row-meta">{footprint(def, units)}</span>
+                    <span className="app-row-add" aria-hidden><Plus size={16} /></span>
                   </button>
                 ))}
               </section>
@@ -135,14 +148,12 @@ export function LibraryPanel() {
             <p className="app-empty">Your own furniture lives here. Snap a photo of your sofa, desk or plant and it becomes a 3D item at its real size.</p>
           )}
           {library.map((def) => (
-            <div key={def.id} className="app-lib-row app-my-row" data-testid="my-item" data-def-id={def.id}>
-              <span className="app-swatch" style={{ background: swatch(def) }} aria-hidden />
-              <span className="app-my-main">
-                {renaming === def.id
-                  ? <RenameInput label="Item name" value={def.name} onDone={(name) => { setRenaming(null); if (name) s().saveDef({ ...def, name }); }} />
-                  : <span className="app-lib-name" onDoubleClick={() => setRenaming(def.id)}>{def.name}</span>}
-                <small>{sizeText(def, units)}</small>
-              </span>
+            <div key={def.id} className="app-lib-row app-my-row" data-testid="my-item" data-def-id={def.id} title={sizeText(def, units)}>
+              <DefTile def={def} />
+              {renaming === def.id
+                ? <RenameInput label="Item name" value={def.name} onDone={(name) => { setRenaming(null); if (name) s().saveDef({ ...def, name }); }} />
+                : <span className="app-row-name" onDoubleClick={() => setRenaming(def.id)}>{def.name}</span>}
+              <span className="app-row-meta">{footprint(def, units)}</span>
               <span className="app-row-actions">
                 <button className="btn ghost app-small icon" title={noRoomHint ?? 'Add to the room'} aria-label={`Place ${def.name}`} disabled={!hasRoom} data-testid="my-item-place" onClick={() => s().placeItem(def.id)}><Plus size={15} /></button>
                 <button className="btn ghost app-small icon" title="Edit" aria-label={`Edit ${def.name}`} data-testid="my-item-edit" onClick={() => s().setUI({ dialog: 'item-creator', editingDefId: def.id })}><SlidersHorizontal size={13} /></button>
@@ -160,10 +171,10 @@ export function LibraryPanel() {
 
 /** Things built into the walls rather than furniture: picked here, then placed by clicking a wall. */
 const FIXTURES: [OpeningKind, ReactNode, string][] = [
-  ['door', <DoorOpen size={16} />, 'Door'],
-  ['window', <AppWindow size={16} />, 'Window'],
-  ['outlet', <Plug size={16} />, 'Outlet'],
-  ['radiator', <Heater size={16} />, 'Radiator'],
+  ['door', <DoorOpen size={15} />, 'Door'],
+  ['window', <AppWindow size={15} />, 'Window'],
+  ['outlet', <Plug size={15} />, 'Outlet'],
+  ['radiator', <Heater size={15} />, 'Radiator'],
 ];
 const matches = (query: string, text: string) => text.toLowerCase().includes(query.trim().toLowerCase());
 
@@ -172,8 +183,8 @@ function FixturesSection({ items, hasRoom }: { items: typeof FIXTURES; hasRoom: 
   const ui = useStore((st) => st.ui);
   return (
     <section className="app-fixtures" data-testid="fixtures-section">
-      <button className="app-lib-cat app-lib-toggle" aria-expanded={open} data-testid="fixtures-toggle" onClick={() => setOpen(!open)}>
-        <ChevronDown size={13} className="app-chevron" aria-hidden /> Doors, windows &amp; fixtures
+      <button className="app-heading app-lib-cat app-lib-toggle" aria-expanded={open} data-testid="fixtures-toggle" onClick={() => setOpen(!open)}>
+        Doors, windows &amp; fixtures<ChevronDown size={14} className="app-chevron" aria-hidden />
       </button>
       {open && items.map(([kind, icon, label]) => {
         const active = ui.tool === 'place-opening' && ui.openingKind === kind;
@@ -183,10 +194,9 @@ function FixturesSection({ items, hasRoom }: { items: typeof FIXTURES; hasRoom: 
             title={hasRoom ? `Add a ${label.toLowerCase()}: then click a wall` : 'Add a room first'}
             onClick={() => s().setUI(active ? { tool: 'select' } : { tool: 'place-opening', openingKind: kind, view: ui.view === 'split' ? 'split' : 'plan' })}
           >
-            <span className="app-lib-icon" aria-hidden>{icon}</span>
-            <span className="app-lib-name">{label}</span>
-            {active && <span className="app-lib-size app-lib-now">Click a wall</span>}
-            <span className="app-lib-add" aria-hidden><Plus size={15} /></span>
+            <Tile>{icon}</Tile>
+            <span className="app-row-name">{label}</span>
+            {active ? <span className="app-row-meta app-lib-now">Click a wall</span> : <span className="app-row-add" aria-hidden><Plus size={16} /></span>}
           </button>
         );
       })}

@@ -21,7 +21,9 @@ const isOpening = (n: number) => (v: unknown) => isObj(v) && str(v.id) && oneOf(
   && Number.isInteger(v.wall) && (v.wall as number) >= 0 && (v.wall as number) < n
   && num(v.offset) && pos(v.width) && num(v.height) && num(v.sill)
   && (v.swing === undefined || (isObj(v.swing) && oneOf(v.swing.hinge, ['start', 'end'] as const) && oneOf(v.swing.side, ['in', 'out'] as const)));
-const isItem = (v: unknown) => isObj(v) && str(v.id) && str(v.defId) && num(v.x) && num(v.y) && num(v.rotation);
+const hex = (v: unknown) => str(v) && /^#[0-9a-f]{6}$/i.test(v);
+const isItem = (v: unknown) => isObj(v) && str(v.id) && str(v.defId) && num(v.x) && num(v.y) && num(v.rotation)
+  && (v.colors === undefined || (isObj(v.colors) && Object.entries(v.colors).every(([k, c]) => oneOf(k, PART_ROLES) && hex(c))));
 const isLayout = (v: unknown) => isObj(v) && str(v.id) && str(v.name) && arr(v.items, isItem);
 const isRoom = (v: unknown) => isObj(v) && str(v.id) && str(v.name) && arr(v.points, isVec) && v.points.length >= 3
   && pos(v.ceilingHeight) && num(v.wallThickness) && v.wallThickness >= 0 && str(v.wallColor)

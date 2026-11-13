@@ -25,6 +25,11 @@ describe('isProject', () => {
   test('accepts a valid project (an item whose def is missing is fine: renderers skip it)', () => {
     expect(isProject(withRoom(() => undefined))).toBe(true);
   });
+  test('per-item colours: optional, known part roles only, #rrggbb only', () => {
+    const colored = (colors: unknown) => withRoom((r) => { (r.layouts[0].items[0] as { colors?: unknown }).colors = colors; });
+    expect(isProject(colored({ body: '#A1b2c3', accent: '#000000' }))).toBe(true);
+    for (const c of [{ wheels: '#000000' }, { body: 'red' }, { body: '#fff' }, ['#000000'], 'x']) expect(isProject(colored(c)), JSON.stringify(c)).toBe(false);
+  });
   test('rejects malformed shapes that the old shallow check let through', () => {
     const bad = [
       withRoom((r) => { r.points = [{ x: 0, y: 0 }, { x: NaN, y: 0 }, { x: 0, y: 100 }]; }),

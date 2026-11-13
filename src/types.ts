@@ -64,6 +64,8 @@ export interface PlacedItem {
   x: Cm;
   y: Cm;
   rotation: number;
+  /** Per-item colour overrides, merged over the def's model colours (parametric models only). */
+  colors?: Partial<PartColors>;
 }
 export interface Layout { id: string; name: string; items: PlacedItem[] }
 

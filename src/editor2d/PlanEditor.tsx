@@ -3,7 +3,7 @@ import type { MouseEvent as RMouseEvent, PointerEvent as RPointerEvent, ReactNod
 import { isFlat } from '../types';
 import type { Guide, Issue, ItemDef, ModelPart, Opening, PlacedItem, Room, Vec2 } from '../types';
 import { THEME } from '../theme';
-import { generateModel } from '../models/generate';
+import { generateModel, withItemColors } from '../models/generate';
 import { useStore } from '../store/store';
 import { useActiveRoom, useGetDef, useIssues, useLayout } from '../store/selectors';
 import {
@@ -493,7 +493,8 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
     const its = issuesFor(it.id);
     const bad = its.length > 0;
     const selected = sel?.type === 'item' && sel.id === it.id;
-    const base = bodyColor(def);
+    const look = withItemColors(def, it.colors);
+    const base = bodyColor(look);
     const flat = isFlat(def);
     const line = bad ? DANGER : STROKE;
     return (
@@ -504,7 +505,7 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
           <rect x={-w / 2} y={-d / 2} width={w} height={d} rx={Math.min(w, d) * 0.02} fill={mix(THEME.planItemFill, base, flat ? 0.3 : 0.22)}
             fillOpacity={flat ? 0.45 : 1} stroke={line} strokeWidth={(bad ? 2 : 1) / k} strokeDasharray={flat ? `${6 / k} ${3 / k}` : undefined} />
           {!flat && symbolParts(def).map((p, i) => {
-            const fill = mix('#ffffff', p.color ?? (def.model.kind === 'parametric' ? def.model.colors[p.role] : base), 0.16);
+            const fill = mix('#ffffff', p.color ?? (look.model.kind === 'parametric' ? look.model.colors[p.role] : base), 0.16);
             const [sx, , sz] = p.size, [px, , pz] = p.position;
             return p.shape === 'box'
               ? <rect key={i} x={px - sx / 2} y={pz - sz / 2} width={sx} height={sz} rx={Math.min(p.round ?? 0, sx / 2, sz / 2)} fill={fill}
@@ -752,10 +753,10 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
           {cursor && <Loupe center={end ?? cursor.p} k={k} view={view} pane={{ w: vw, h: vh }}>{loupeContent}</Loupe>}
         </>
       )}
-      <div className="pe-zoom">
-        <button type="button" className="btn" title="Zoom in" aria-label="Zoom in" onClick={() => zoomCenter(1.25)}><ZoomIn size={16} aria-hidden /></button>
-        <button type="button" className="btn" title="Zoom out" aria-label="Zoom out" onClick={() => zoomCenter(0.8)}><ZoomOut size={16} aria-hidden /></button>
-        <button type="button" className="btn" data-testid="plan-fit" title="Fit room" aria-label="Fit room" onClick={fit}><Maximize size={15} aria-hidden /> Fit</button>
+      <div className="pe-zoom app-float">
+        <button type="button" className="btn ghost icon" title="Zoom out" aria-label="Zoom out" onClick={() => zoomCenter(0.8)}><ZoomOut size={16} aria-hidden /></button>
+        <button type="button" className="btn ghost icon" title="Zoom in" aria-label="Zoom in" onClick={() => zoomCenter(1.25)}><ZoomIn size={16} aria-hidden /></button>
+        <button type="button" className="btn ghost icon" data-testid="plan-fit" title="Fit room" aria-label="Fit room" onClick={fit}><Maximize size={16} aria-hidden /></button>
       </div>
     </div>
   );

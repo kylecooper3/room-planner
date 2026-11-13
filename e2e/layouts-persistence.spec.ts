@@ -10,6 +10,7 @@ test('layouts: add, duplicate, rename, switch, compare', async ({ page }) => {
   await expect(page.getByTestId('plan-item')).toHaveCount(0);
   await tabs.first().click();
   await expect(page.getByTestId('plan-item')).toHaveCount(6);
+  await page.getByTestId('layout-menu').click();
   await page.getByTestId('layout-duplicate').click();
   await expect(tabs).toHaveCount(3);
   await expect(tabs.nth(2)).toHaveText('Layout 1 copy');

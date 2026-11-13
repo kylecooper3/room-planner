@@ -28,7 +28,7 @@ test('clearance: a dresser in the door swing is flagged and explained, and clear
   await expect(item).toHaveAttribute('data-issue', 'true');
   await expect(page.getByTestId('issue-callout')).toContainText(/door swing/i); // selected → callout shown
   await expect(page.locator('.app-inspector .app-issue')).toContainText(/door swing/i);
-  await page.mouse.click(5, 300); // deselect (library panel blank area is not the plan) → room inspector issue list
+  await page.keyboard.press('Escape'); // deselect → room inspector issue list
   await page.getByTestId('plan-svg').click({ position: { x: 20, y: 20 } });
   await expect(page.getByTestId('issues-list')).toContainText(/door swing/i);
   await expect(page.getByTestId('issue-callout')).toHaveCount(0);
@@ -206,7 +206,8 @@ test('dialogs close; wall colour drag is one undo step; Esc leaves tools', async
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
 
-  const color = page.getByTestId('wall-color');
+  await page.getByTestId('wall-color').click(); // opens the palette popover; Custom… is the native picker
+  const color = page.getByTestId('wall-color-custom');
   const before = (await activeRoom(page)).wallColor;
   await color.focus();
   for (const c of ['#aa0000', '#bb1111', '#cc2222']) await color.fill(c);

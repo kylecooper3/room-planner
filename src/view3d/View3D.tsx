@@ -5,6 +5,7 @@ import { CM_TO_M as M, isFlat, type Issue, type ItemDef, type Layout, type Place
 import { useStore } from '../store/store';
 import { useActiveRoom, useGetDef, useIssues, useLayout } from '../store/selectors';
 import { ItemModelView } from '../models/ItemModelView';
+import { withItemColors } from '../models/generate';
 import { clearancePolygon, clipToConvex, doorSwingPolygon } from '../core/geometry';
 import { RoomShell, floorShape } from './RoomShell';
 import { OrbitRig, WalkRig, type Bounds, type LockState } from './cameras';
@@ -63,17 +64,18 @@ export function View3D({ layoutId, readOnly = false }: View3DProps) {
           onLock={setLock} overlay={rootRef} setCursor={(c) => { if (rootRef.current) rootRef.current.style.cursor = c; }} />
       </Canvas>
       {!compare && (
-        <div className="v3-cams">
-          <div className="v3-seg" role="group" aria-label="Camera">
-            {/* blur: a focused button would be "clicked" by Space (jump) */}
-            <button type="button" data-testid="cam-overview" aria-pressed={!walkMode} title="Orbit, pan and zoom over the whole home"
-              onClick={(e) => { e.currentTarget.blur(); setWalk(false); }}><MapIcon size={15} aria-hidden /> Overview</button>
-            <button type="button" data-testid="cam-walk" aria-pressed={walkMode} title="Walk around inside, first person"
-              onClick={(e) => { e.currentTarget.blur(); setWalk(true); }}><Footprints size={15} aria-hidden /> Walk</button>
-          </div>
+        <div className="v3-cams app-float" role="group" aria-label="Camera">
+          {/* blur: a focused button would be "clicked" by Space (jump) */}
+          <button type="button" className="btn ghost" data-testid="cam-overview" aria-pressed={!walkMode} title="Orbit, pan and zoom over the whole home"
+            onClick={(e) => { e.currentTarget.blur(); setWalk(false); }}><MapIcon size={16} aria-hidden /> Overview</button>
+          <button type="button" className="btn ghost" data-testid="cam-walk" aria-pressed={walkMode} title="Walk around inside, first person"
+            onClick={(e) => { e.currentTarget.blur(); setWalk(true); }}><Footprints size={16} aria-hidden /> Walk</button>
           {!walkMode && (
-            <button type="button" className="v3-top" data-testid="cam-top" aria-pressed={top} title="Look straight down (click again to go back)"
-              onClick={(e) => { e.currentTarget.blur(); setTop((t) => !t); }}><ArrowDownToLine size={15} aria-hidden /> Top view</button>
+            <>
+              <span className="app-float-sep" aria-hidden />
+              <button type="button" className="btn ghost" data-testid="cam-top" aria-pressed={top} title="Look straight down (click again to go back)"
+                onClick={(e) => { e.currentTarget.blur(); setTop((t) => !t); }}><ArrowDownToLine size={16} aria-hidden /> Top view</button>
+            </>
           )}
         </div>
       )}
@@ -326,6 +328,7 @@ interface ItemNodeProps {
 function ItemNode({ item, def, highlight, label, onClick, onHover, overlay }: ItemNodeProps) {
   const ref = useRef<THREE.Group>(null);
   const flat = isFlat(def);
+  const look = useMemo(() => withItemColors(def, item.colors), [def, item.colors]);
   useEffect(() => {
     ref.current?.traverse((o) => { if ((o as THREE.Mesh).isMesh) { o.castShadow = !flat; o.receiveShadow = true; } });
   });
@@ -338,7 +341,7 @@ function ItemNode({ item, def, highlight, label, onClick, onHover, overlay }: It
       onPointerOver={(e) => { e.stopPropagation(); onHover(true); }}
       onPointerOut={() => onHover(false)}
     >
-      <ItemModelView model={def.model} size={def.size} highlight={highlight} />
+      <ItemModelView model={look.model} size={def.size} highlight={highlight} />
       {label && label.length > 0 && (
         <Label3D overlay={overlay} position={[0, def.size.h * M + 0.25, 0]} lines={label} />
       )}

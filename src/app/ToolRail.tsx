@@ -13,7 +13,7 @@ function RailButton(props: { active?: boolean; label: string; title: string; ico
       className={`app-rail-btn${props.active ? ' active' : ''}`} aria-pressed={props.active} title={props.title} aria-label={props.label}
       data-testid={props.testId} disabled={props.disabled} onClick={props.onClick}
     >
-      {props.icon}<span aria-hidden>{props.label}</span>
+      {props.icon}
     </button>
   );
 }
@@ -29,15 +29,15 @@ export function ToolRail() {
 
   return (
     <div className="app-rail" role="toolbar" aria-label="Tools" aria-orientation="vertical">
-      <RailButton active={ui.tool === 'select'} label="Select" title="Select and move (V)" icon={<MousePointer2 size={19} />} testId="tool-select" onClick={() => set({ tool: 'select' })} />
+      <RailButton active={ui.tool === 'select'} label="Select" title="Select and move (V)" icon={<MousePointer2 size={18} />} testId="tool-select" onClick={() => set({ tool: 'select' })} />
       <RailButton active={ui.tool === 'draw-room'} label="Draw room" title="Draw a new room: click its corners"
-        icon={<PenTool size={19} />} testId="tool-draw-room" onClick={() => set({ tool: 'draw-room', view: planOrSplit })} />
+        icon={<PenTool size={18} />} testId="tool-draw-room" onClick={() => set({ tool: 'draw-room', view: planOrSplit })} />
       <div className="app-rail-sep" />
-      <RailButton active={ui.dialog === 'floorplan'} label="Trace plan" title="Trace rooms over a floor-plan image" icon={<ImageUp size={19} />}
+      <RailButton active={ui.dialog === 'floorplan'} label="Trace plan" title="Trace rooms over a floor-plan image" icon={<ImageUp size={18} />}
         testId="open-floorplan" onClick={() => set({ dialog: ui.dialog === 'floorplan' ? 'none' : 'floorplan', view: planOrSplit })} />
       <div className="app-rail-spacer" />
       <Menu
-        label={<><Eye size={19} /><span aria-hidden>Display</span></>} title="Display options: grid, snapping, clearances…"
+        label={<Eye size={18} />} title="Display options: grid, snapping, clearances…"
         ariaLabel="Display options" testId="display-menu" className="app-rail-btn" place="side"
       >
         <div className="app-menu-title">Plan</div>

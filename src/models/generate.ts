@@ -1,4 +1,4 @@
-import type { Category, GenerateModel, ModelPart, StyleParamDef, StyleParams, StyleSchema } from '../types';
+import { PART_ROLES, type Category, type GenerateModel, type ItemDef, type ModelPart, type PartColors, type PartRole, type StyleParamDef, type StyleParams, type StyleSchema } from '../types';
 import { GENERATORS } from './generators';
 
 const sel = (key: string, label: string, options: string[], def = options[0]): StyleParamDef =>
@@ -86,4 +86,15 @@ export const generateModel: GenerateModel = (model, size) => {
   const D = safe(size.d);
   const category: Category = model.category in GENERATORS ? model.category : 'box';
   return fitParts(GENERATORS[category](resolveStyle(category, model.style), W, H, D), W, H, D);
+};
+
+/** The def as a placed item shows it: its per-item colour overrides merged over the model's colours. */
+export const withItemColors = (def: ItemDef, colors: Partial<PartColors> | undefined): ItemDef =>
+  !colors || def.model.kind !== 'parametric' ? def : { ...def, model: { ...def.model, colors: { ...def.model.colors, ...colors } } };
+
+/** Part roles whose colour actually shows on this def (parts with a fixed colour, e.g. a TV screen, don't count). */
+export const visibleRoles = (def: ItemDef): PartRole[] => {
+  if (def.model.kind !== 'parametric') return [];
+  const used = new Set(generateModel(def.model, def.size).filter((p) => !p.color).map((p) => p.role));
+  return PART_ROLES.filter((r) => used.has(r));
 };

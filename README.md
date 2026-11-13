@@ -67,11 +67,12 @@ The last plan you had open reopens on the next visit.
 - **Top bar:** "Floor plans › *plan name*" (click *Floor plans* to go back; click the name to rename the plan), the view
   switcher (Plan / 3D / Split / Compare, keys 1-4), undo/redo, the units switch, the **File** menu (new plan, import,
   export `.roomplan`, export PNGs) and help.
-- **Tool rail** (left edge of the canvas): Select, Draw room, Trace plan, and at the bottom
-  **Display** (grid, snapping, clearance zones, cut-away walls, walk mode).
+- **Tool rail** (left edge of the canvas, icons with tooltips): Select, Draw room, Trace plan, and at the bottom
+  **Display** (eye icon: grid, snapping, clearance zones, cut-away walls, walk mode).
 - **Left sidebar:** the plan's **Rooms** (click one to work on it, double-click or the pencil to rename, bin to delete,
-  **Add room** for the three ways to add one) above the **Furniture** catalogue (searchable; it starts with **Doors, windows & fixtures**) and **My stuff**.
-- **Above the canvas:** the active room and its layouts as tabs.
+  **+** next to the heading for the three ways to add one) above the **Furniture** catalogue (searchable; it starts with **Doors, windows & fixtures**) and **My stuff**.
+- **Above the canvas:** the active room's layouts as tabs, **+** for a new one and **⋯** to rename, duplicate or delete it.
+- **On the canvas:** only controls for that view: zoom and fit (plan, bottom right), Overview / Walk / Top view (3D, top left).
 - **Inspector** (right): details of whatever is selected; with nothing selected, the room's details and its **Fit check**.
 
 ### Set up a room (three ways)
@@ -114,7 +115,7 @@ sidebar).
 Pick a door, window, outlet or radiator under **Doors, windows & fixtures** at the top of the Furniture tab and click a wall to place it; click one to edit it in the inspector: width, height,
 sill height, offset along the wall, and for doors the hinge side and swing direction (in/out). Widths are kept between 5 cm
 and the length of the wall, and the opening stays on its wall. The room inspector sets the name, ceiling height, wall
-colour and floor (wood, carpet or tile) and shows the floor area.
+colour (a palette of interior colours, or **Custom…** for any colour) and floor (wood, carpet or tile) and shows the floor area.
 
 ### Units
 The "ft · in" / "m · cm" button in the top bar switches the display between imperial and metric. Everything is stored in centimetres,
@@ -131,8 +132,13 @@ mean feet/inches or centimetres depending on the field and unit system. Invalid 
   press Delete to remove it. Click a wall to select it: the inspector shows its length, and typing a new length moves
   the wall's end corner along the wall (a rectangle stays a rectangle) as one undo step; **Split wall** adds a corner in
   its middle.
-- Mouse wheel zooms; drag the background, middle-drag or Space + drag pans; "Fit" re-centres the room.
-- The inspector shows the selected item's position and rotation and has Rotate 90°, Duplicate and Delete.
+- Mouse wheel zooms; drag the background, middle-drag or Space + drag pans; the fit button (bottom right) re-centres the room.
+- The inspector shows the selected item's **Colour** (one swatch per part the item actually has, named for it: a bed's
+  frame, sheets, blanket and pillows, a sofa's upholstery, cushions and legs; pick from the palette, **Custom…**, or
+  **Reset to default**), its position and rotation, and Rotate 90°, Duplicate and Delete. Colours belong to that placed
+  item only (a duplicate keeps them); each pick is one undo step.
+
+![Item colour](docs/screenshots/item-colour.png)
 
 ### Library and My stuff
 The **Furniture** tab lists 25 parametric presets (beds, sofas, desks, dressers, rugs, lamps, plants, TV...) by category
@@ -168,7 +174,8 @@ doorways from room to room. The first Esc releases the mouse; a second Esc (or O
 ![Split view](docs/screenshots/split.png)
 
 ### Layouts and compare
-Each room can have several layouts (the bar above the plan): add, duplicate, rename, delete and switch between them.
+Each room can have several layouts (the tabs above the plan): **+** adds one, **⋯** renames, duplicates or deletes the
+current one (double-clicking a tab renames it too).
 **Compare** shows two layouts side by side, in 2D or 3D, with the right-hand one read-only.
 
 ![Compare view](docs/screenshots/compare.png)

@@ -4,7 +4,11 @@ import { formatArea, formatLength } from '../core/units';
 import { polygonArea } from '../core/geometry';
 import { useActiveRoom, useGetDef, useIssues, useLayout } from '../store/selectors';
 import { useStore } from '../store/store';
-import type { DoorSwing, FloorMaterial, Opening, OpeningKind, PlacedItem, Room, UnitSystem } from '../types';
+import type { Category, DoorSwing, FloorMaterial, ItemDef, Opening, OpeningKind, PartRole, PlacedItem, Room, UnitSystem } from '../types';
+import { visibleRoles } from '../models/generate';
+import { ColorPicker } from './ColorPicker';
+import { THEME } from '../theme';
+import { useMemo } from 'react';
 import { LengthInput, NumberInput, TextInput } from './inputs';
 import { deleteCorner, normDeg } from './shortcuts';
 import { insertCorner, setWallLength } from '../editor2d/wallEdit';
@@ -35,6 +39,44 @@ const Section = ({ title, children }: { title?: string; children: ReactNode }) =
   <section className="app-insp-section">{title && <h3>{title}</h3>}{children}</section>
 );
 
+/** What each colourable part is called, per category (generators decide which parts get which role). */
+const PART_NAMES: Partial<Record<Category, Partial<Record<PartRole, string>>>> = {
+  sofa: { body: 'Upholstery', cushion: 'Cushions', frame: 'Legs' },
+  armchair: { body: 'Upholstery', cushion: 'Cushions', frame: 'Legs' },
+  chair: { body: 'Back', cushion: 'Seat', frame: 'Frame', accent: 'Casters' },
+  bed: { frame: 'Frame', cushion: 'Sheets', body: 'Headboard & blanket', accent: 'Pillows' },
+  table: { body: 'Top', frame: 'Legs' },
+  desk: { body: 'Top', frame: 'Legs', accent: 'Handles' },
+  dresser: { body: 'Body', frame: 'Drawers', accent: 'Handles' },
+  nightstand: { body: 'Body', frame: 'Drawers', accent: 'Handles' },
+  shelf: { body: 'Shelves', frame: 'Uprights', accent: 'Books' },
+  lamp: { body: 'Base', frame: 'Stand', accent: 'Shade' },
+  rug: { body: 'Rug', frame: 'Border' },
+  plant: { body: 'Pot', frame: 'Soil & stem', cushion: 'Leaves', accent: 'Highlights' },
+  tv: { body: 'TV', frame: 'Stand', accent: 'Handles' },
+  box: { body: 'Colour' },
+};
+const DEFAULT_PART_NAMES: Record<PartRole, string> = { body: 'Body', cushion: 'Cushions', frame: 'Frame', accent: 'Accents' };
+
+function ColorSection({ item, def }: { item: PlacedItem; def: ItemDef }) {
+  const roles = useMemo(() => visibleRoles(def), [def]);
+  if (def.model.kind !== 'parametric' || !roles.length) return null;
+  const { category, colors } = def.model;
+  const set = (patch: PlacedItem['colors']) => s().updateItem(item.id, { colors: patch && Object.keys(patch).length ? patch : undefined });
+  return (
+    <Section title="Colour">
+      {roles.map((role) => {
+        const own = item.colors?.[role];
+        const { [role]: _drop, ...others } = item.colors ?? {};
+        return (
+          <ColorPicker key={role} label={PART_NAMES[category]?.[role] ?? DEFAULT_PART_NAMES[role]} value={own ?? colors[role]} isDefault={!own} testId={`item-color-${role}`}
+            onChange={(hex) => set({ ...item.colors, [role]: hex })} onReset={own ? () => set(others) : undefined} />
+        );
+      })}
+    </Section>
+  );
+}
+
 function ItemPanel({ item, units }: { item: PlacedItem; units: UnitSystem }) {
   const def = useGetDef()(item.defId);
   const issues = useIssues().filter((i) => i.itemIds.includes(item.id));
@@ -48,6 +90,7 @@ function ItemPanel({ item, units }: { item: PlacedItem; units: UnitSystem }) {
           {issues.map((i) => <p key={i.id} className="app-issue" role="note"><TriangleAlert size={14} />{i.message}</p>)}
         </Section>
       )}
+      {def && <ColorSection item={item} def={def} />}
       <Section title="Position">
       <div className="app-row">
         <LengthInput label="X" value={item.x} units={units} allowZero allowNegative maxAbs={MAX_COORD} testId="item-x" onCommit={(x) => update({ x })} />
@@ -140,10 +183,8 @@ function RoomPanel({ room, units }: { room: Room; units: UnitSystem }) {
       <TextInput label="Name" value={room.name} testId="room-name" onCommit={(name) => update({ name })} />
       <LengthInput label="Ceiling height" value={room.ceilingHeight} units={units} testId="room-ceiling" onCommit={(ceilingHeight) => update({ ceilingHeight })} />
       <div className="app-row">
-        <label className="field">Wall colour
-          <input type="color" data-testid="wall-color" value={room.wallColor} onChange={(e) => update({ wallColor: e.target.value })}
-            onFocus={() => s().beginBatch()} onBlur={() => s().endBatch()} />
-        </label>
+        <ColorPicker label="Wall colour" value={room.wallColor} testId="wall-color" onChange={(wallColor) => update({ wallColor })}
+          isDefault={room.wallColor.toLowerCase() === THEME.wall3d} onReset={room.wallColor.toLowerCase() === THEME.wall3d ? undefined : () => update({ wallColor: THEME.wall3d })} />
         <label className="field">Floor
           <select data-testid="floor-material" value={room.floor} onChange={(e) => update({ floor: e.target.value as FloorMaterial })}>
             <option value="wood">Wood</option><option value="carpet">Carpet</option><option value="tile">Tile</option>

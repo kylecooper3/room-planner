@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CATEGORIES, WALKWAY_CM } from '../types';
 import type { Category, ModelPart, ParametricModel, Size3, StyleParams } from '../types';
-import { STYLE_SCHEMA, defaultStyle, generateModel } from './generate';
+import { STYLE_SCHEMA, defaultStyle, generateModel, visibleRoles, withItemColors } from './generate';
 import { PRESETS, defaultClearances, defaultColors } from './presets';
 
 const SIZES: Size3[] = [
@@ -124,5 +124,19 @@ describe('defaultClearances', () => {
     for (const c of ['desk', 'sofa', 'armchair', 'table', 'rug', 'lamp', 'plant', 'tv', 'box'] as Category[]) {
       expect(defaultClearances(c, s, 'metric')).toEqual([]);
     }
+  });
+});
+
+describe('per-item colours', () => {
+  const bed = PRESETS.find((d) => d.id === 'preset-bed-queen')!;
+  it('withItemColors merges overrides over the def colours and leaves the def alone without overrides', () => {
+    expect(withItemColors(bed, undefined)).toBe(bed);
+    const look = withItemColors(bed, { body: '#123456' });
+    expect(look.model.kind === 'parametric' && look.model.colors).toEqual({ ...(bed.model.kind === 'parametric' && bed.model.colors), body: '#123456' });
+  });
+  it('visibleRoles lists only roles whose colour shows (the TV screen has a fixed colour)', () => {
+    expect(visibleRoles(bed)).toEqual(['body', 'cushion', 'frame', 'accent']);
+    expect(visibleRoles({ ...bed, model: model('box') })).toEqual(['body']);
+    expect(visibleRoles({ ...bed, model: model('tv', { mount: 'stand' }) })).toEqual(['body', 'frame']);
   });
 });
