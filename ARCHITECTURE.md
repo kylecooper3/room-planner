@@ -29,7 +29,7 @@ Rule: a module only edits files in its own directory. Cross-module calls go thro
 `useStore` (`src/store/store.ts`) holds `AppState = { project, ui, canUndo, canRedo, hydrated } & Actions`.
 
 ```
-Project { units, rooms[], activeRoomId, library[] (My stuff), underlay }
+Project { units, rooms[], activeRoomId, library[] (My stuff: shared list `room-planner/my-stuff` merged in on open, see store/floorPlans.ts), underlay }
   Room { points[], ceilingHeight, wallThickness, openings[], wallColor, floor, layouts[], activeLayoutId }
     Layout { name, items: PlacedItem[] }       PlacedItem { defId, x, y, rotation }
 ItemDef { name, size{w,d,h}, model: ItemModel, clearances[], source, photoId? }   // presets live in code, user defs in project.library

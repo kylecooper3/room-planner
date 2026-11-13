@@ -137,7 +137,7 @@ mean feet/inches or centimetres depending on the field and unit system. Invalid 
 ### Library and My stuff
 The **Furniture** tab lists 25 parametric presets (beds, sofas, desks, dressers, rugs, lamps, plants, TV...) by category
 with their footprint; type in the search box to filter, click one to place it. **My stuff** holds your own items: create one from a photo (see below) or without a photo,
-then place, edit, rename or delete it. Deleting an item from My stuff also removes it from every room.
+then place, edit, rename or delete it. My stuff is shared by all your floor plans. Deleting an item removes it from My stuff and from every room of the open plan; another plan that still uses it keeps (and re-adds) it.
 
 ![Item creator](docs/screenshots/item-creator.png)
 

@@ -10,7 +10,7 @@
 //   room-planner/project      legacy single project: migrated into the first plan, then kept (so an older version still opens it)
 import { create } from 'zustand';
 import { del, get, keys, set } from 'idb-keyval';
-import type { Project, Vec2 } from '../types';
+import type { ItemDef, Project, Vec2 } from '../types';
 import { THEME } from '../theme';
 import { emptyProject, useStore } from './store';
 import { exportProject, importProject, isProject, referencedBlobIds } from './projectFile';
@@ -48,6 +48,8 @@ const INDEX_BACKUP = 'room-planner/plans-backup';
 const PLAN = (id: string) => `room-planner/plan/${id}`;
 const LAST = 'room-planner/last-open';
 const LEGACY = 'room-planner/project';
+/** "My stuff": the user's own furniture, shared by every floor plan (each plan record also keeps the defs it uses). */
+const STUFF = 'room-planner/my-stuff';
 /** Where a stored project that fails validation is kept instead of being overwritten. */
 export const BACKUP_KEY = 'room-planner/project-backup';
 const LOCK = 'room-planner/editor';
@@ -79,6 +81,7 @@ const metaOf = (id: string, p: Project, createdAt: number, now = Date.now()): Fl
 
 // ───────── state ─────────
 let canSave = false;
+let stuff: ItemDef[] = [];
 let lock: Promise<boolean> | null = null;
 let unsubscribe: (() => void) | null = null;
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -101,6 +104,13 @@ const setPlans = (plans: FloorPlanMeta[]) => {
   useFloorPlans.setState({ plans: sortPlans(plans) });
   return set(INDEX, useFloorPlans.getState().plans);
 };
+const usesDef = (p: Project, id: string) => p.rooms.some((r) => r.layouts.some((l) => l.items.some((i) => i.defId === id)));
+/** The open plan's "My stuff" = the shared list (its version wins) + the plan's own defs that its items use (e.g. imported). */
+export const withSharedStuff = (p: Project, shared: ItemDef[]): Project => {
+  const ids = new Set(shared.map((d) => d.id));
+  return { ...p, library: [...shared, ...p.library.filter((d) => !ids.has(d.id) && usesDef(p, d.id))] };
+};
+
 const findMeta = (id: string) => useFloorPlans.getState().plans.find((m) => m.id === id);
 
 const writeMeta = async (id: string, project: Project) => {
@@ -112,8 +122,11 @@ const writeMeta = async (id: string, project: Project) => {
 const savePlan = (id: string, project: Project): Promise<void> => {
   if (!findMeta(id)) return Promise.resolve(); // deleted meanwhile: never resurrect its record
   const record = set(PLAN(id), project);
+  stuff = project.library; // the open plan holds the whole shared list, so its library IS the shared list now
+  const shared = set(STUFF, stuff);
   return serial(async () => {
     await record;
+    await shared;
     await writeMeta(id, project);
   });
 };
@@ -167,7 +180,7 @@ const loadIntoEditor = async (id: string): Promise<void> => {
       usePersistence.setState({ notice });
     }
   }
-  apply(project, id);
+  apply(withSharedStuff(project, stuff), id);
   if (canSave) await set(LAST, id);
 };
 
@@ -176,7 +189,7 @@ const loadIntoEditor = async (id: string): Promise<void> => {
 export const createFloorPlan = async (opts?: { name?: string; project?: Project }): Promise<string> => {
   writable();
   await flush();
-  const project = { ...(opts?.project ?? emptyProject()), name: opts?.name ?? opts?.project?.name ?? UNTITLED };
+  const project = withSharedStuff({ ...(opts?.project ?? emptyProject()), name: opts?.name ?? opts?.project?.name ?? UNTITLED }, stuff);
   const id = await addPlan(project);
   apply(project, id);
   await set(LAST, id);
@@ -251,9 +264,9 @@ export const importFloorPlan = async (file: File): Promise<string> => {
 /** .roomplan file of any plan (open or not). */
 export const exportFloorPlan = async (id: string): Promise<Blob> => exportProject(await readPlan(id));
 
-/** Union of blob ids referenced by every plan record; rejects if some record is damaged (its images may still be wanted). */
+/** Union of blob ids referenced by every plan record and the shared "My stuff"; rejects if some record is damaged (its images may still be wanted). */
 const referencedByAllPlans = async (): Promise<string[]> => {
-  const ids: string[] = [];
+  const ids = referencedBlobIds({ ...emptyProject(), library: stuff });
   for (const m of useFloorPlans.getState().plans) {
     const p = await get<unknown>(PLAN(m.id));
     if (!isProject(p)) throw new Error(`Floor plan ${m.id} is damaged`);
@@ -311,6 +324,7 @@ export const initPersistence = async (): Promise<void> => {
   pending = null;
   const owner = await (lock ??= acquireEditLock());
   canSave = owner;
+  stuff = [];
   let notice: string | null = null;
   try {
     let index = await get<unknown>(INDEX);
@@ -337,6 +351,19 @@ export const initPersistence = async (): Promise<void> => {
       if (canSave) await set(INDEX, sortPlans(plans));
     }
     useFloorPlans.setState({ plans: sortPlans(plans), activeId: null });
+    const savedStuff = await get<unknown>(STUFF);
+    // Validated like a plan (a damaged list is rebuilt from the plans instead of crashing the editor).
+    if (isProject({ ...emptyProject(), library: savedStuff })) stuff = savedStuff as ItemDef[];
+    else {
+      // First run with a shared list: start from every plan's own "My stuff" (most recently edited plan wins on a clash).
+      const seen = new Set<string>();
+      stuff = [];
+      for (const m of useFloorPlans.getState().plans) {
+        const p = await get<unknown>(PLAN(m.id));
+        if (isProject(p)) for (const d of p.library) if (!seen.has(d.id)) { seen.add(d.id); stuff.push(d); }
+      }
+      if (canSave) await set(STUFF, stuff);
+    }
     // Runs before hydrated=true and before any plan is open (empty undo history), so the union of all plans' references
     // is everything that can still point at a blob. Skipped while a damaged backup exists, a record is damaged, or the
     // index had to be rebuilt (some plan may be missing from it).

@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { clear, del, get, set } from 'idb-keyval';
-import type { Project, Room } from '../types';
+import type { ItemDef, Project, Room } from '../types';
 
 vi.mock('../core/geometry', () => ({ rectRoomPoints: () => [], polygonCentroid: () => ({ x: 0, y: 0 }) }));
 vi.mock('../models/presets', () => ({ PRESETS: [] }));
@@ -160,6 +160,56 @@ describe('floor-plan library', () => {
     expect(await again.getBlob(ia)).toBeDefined();
     expect(await again.getBlob(ib)).toBeDefined();
     expect(await again.getBlob(orphan)).toBeUndefined();
+  });
+
+  const chair = (photoId: string): ItemDef => ({
+    id: 'u-chair', name: 'Chair', size: { w: 50, d: 50, h: 90 }, model: { kind: 'mesh', meshId: photoId }, clearances: [], source: 'user', photoId,
+  });
+
+  test('"My stuff" is shared by every floor plan: added in one, shown in all, deleted everywhere', async () => {
+    const { createFloorPlan, openFloorPlan, closeFloorPlan, putBlob, useStore } = await load();
+    const a = await createFloorPlan({ name: 'A' });
+    const b = await createFloorPlan({ name: 'B' });
+    useStore.getState().saveDef(chair(await putBlob(blob())));
+    await openFloorPlan(a); // saves B (and the shared list) first
+    expect(useStore.getState().project.library.map((d) => d.name)).toEqual(['Chair']);
+    useStore.getState().deleteDef('u-chair');
+    await openFloorPlan(b);
+    expect(useStore.getState().project.library).toEqual([]);
+    await closeFloorPlan();
+    expect(await get('room-planner/my-stuff')).toEqual([]);
+  });
+
+  test('a shared item\'s photo survives deleting the plan it was made in (and the startup sweep)', async () => {
+    const first = await load();
+    const photo = await first.putBlob(blob());
+    const a = await first.createFloorPlan({ name: 'A' });
+    first.useStore.getState().saveDef(chair(photo));
+    await first.createFloorPlan({ name: 'B' }); // saves A, then opens B with the shared chair
+    await first.closeFloorPlan();
+    await first.deleteFloorPlan(a);
+    expect(await first.getBlob(photo)).toBeDefined();
+    const again = await reload();
+    expect(await again.getBlob(photo)).toBeDefined();
+  });
+
+  test('first run with a shared list starts from every plan\'s own "My stuff"; a plan keeps defs its items use', async () => {
+    const lib = (id: string, used: boolean): Project => ({
+      ...emptyProject(), name: id, library: [{ ...chair('m'), id, name: id }],
+      rooms: used ? [{ ...room(), layouts: [{ id: 'l', name: 'Layout 1', items: [{ id: 'i', defId: id, x: 1, y: 1, rotation: 0 }] }] }] : [],
+    });
+    const first = await load();
+    const a = await first.createFloorPlan({ name: 'a' });
+    const b = await first.createFloorPlan({ name: 'b' });
+    await first.closeFloorPlan();
+    // Records as saved before this version: each plan with its own "My stuff", no shared list yet.
+    await set(PLAN(a), lib('def-a', false));
+    await set(PLAN(b), lib('def-b', true));
+    await del('room-planner/my-stuff');
+    const again = await reload();
+    expect(((await get<ItemDef[]>('room-planner/my-stuff')) ?? []).map((d) => d.id).sort()).toEqual(['def-a', 'def-b']);
+    await again.openFloorPlan(a);
+    expect(again.useStore.getState().project.library.map((d) => d.id).sort()).toEqual(['def-a', 'def-b']);
   });
 
   const twoPlansWithImages = async () => {

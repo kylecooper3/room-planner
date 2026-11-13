@@ -96,3 +96,25 @@ test('menus are keyboard operable and Esc closes them', async ({ page }) => {
   await expect(page.getByTestId('file-menu')).toBeFocused();
   expect((await state(page)).ui.tool).toBe('select');
 });
+
+test('"My stuff" is shared by every floor plan, and survives a reload', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('home-demo').click();
+  await expect(page.getByTestId('plan-name')).toHaveText('Demo bedroom');
+  await page.evaluate(() => window.__store!.getState().saveDef({
+    id: 'u-armchair', name: 'Grandma armchair', size: { w: 80, d: 80, h: 90 }, clearances: [], source: 'user',
+    model: { kind: 'mesh', meshId: 'm' },
+  }));
+  // A brand-new plan shows it straight away.
+  await page.getByTestId('nav-home').click();
+  await page.getByTestId('home-new').click();
+  await page.getByTestId('home-new-dimensions').click();
+  await page.getByTestId('room-width').fill('10');
+  await page.getByTestId('room-length').fill('10');
+  await page.getByTestId('room-create').click();
+  await page.getByTestId('tab-my-stuff').click();
+  await expect(page.getByTestId('my-item')).toHaveText(/Grandma armchair/);
+  await page.reload();
+  await page.getByTestId('tab-my-stuff').click();
+  await expect(page.getByTestId('my-item')).toHaveText(/Grandma armchair/);
+});
