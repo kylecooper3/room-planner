@@ -67,10 +67,10 @@ The last plan you had open reopens on the next visit.
 - **Top bar:** "Floor plans › *plan name*" (click *Floor plans* to go back; click the name to rename the plan), the view
   switcher (Plan / 3D / Split / Compare, keys 1-4), undo/redo, the units switch, the **File** menu (new plan, import,
   export `.roomplan`, export PNGs) and help.
-- **Tool rail** (left edge of the canvas): Select, Draw room, Door, Window, Outlet, Radiator, Trace plan, and at the bottom
+- **Tool rail** (left edge of the canvas): Select, Draw room, Trace plan, and at the bottom
   **Display** (grid, snapping, clearance zones, cut-away walls, walk mode).
 - **Left sidebar:** the plan's **Rooms** (click one to work on it, double-click or the pencil to rename, bin to delete,
-  **Add room** for the three ways to add one) above the **Furniture** catalogue (searchable) and **My stuff**.
+  **Add room** for the three ways to add one) above the **Furniture** catalogue (searchable; it starts with **Doors, windows & fixtures**) and **My stuff**.
 - **Above the canvas:** the active room and its layouts as tabs.
 - **Inspector** (right): details of whatever is selected; with nothing selected, the room's details and its **Fit check**.
 
@@ -111,7 +111,7 @@ Or load the **demo bedroom** to look around first. A floor plan can hold several
 sidebar).
 
 ### Openings and room details
-Place doors, windows, outlets and radiators from the tool rail, then click one to edit it in the inspector: width, height,
+Pick a door, window, outlet or radiator under **Doors, windows & fixtures** at the top of the Furniture tab and click a wall to place it; click one to edit it in the inspector: width, height,
 sill height, offset along the wall, and for doors the hinge side and swing direction (in/out). Widths are kept between 5 cm
 and the length of the wall, and the opening stays on its wall. The room inspector sets the name, ceiling height, wall
 colour and floor (wood, carpet or tile) and shows the floor area.

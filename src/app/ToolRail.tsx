@@ -1,14 +1,9 @@
-import { AppWindow, DoorOpen, Eye, Footprints, Grid3x3, Heater, ImageUp, Magnet, MousePointer2, PenTool, Plug, Scissors, ShieldCheck } from 'lucide-react';
+import { Eye, Footprints, Grid3x3, ImageUp, Magnet, MousePointer2, PenTool, Scissors, ShieldCheck } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { useActiveRoom } from '../store/selectors';
 import { useStore } from '../store/store';
-import type { OpeningKind, UIState, ViewMode } from '../types';
+import type { UIState, ViewMode } from '../types';
 import { Menu, MenuItem } from './Menu';
 
-const OPENINGS: [OpeningKind, ReactNode, string][] = [
-  ['door', <DoorOpen size={19} />, 'Door'], ['window', <AppWindow size={19} />, 'Window'],
-  ['outlet', <Plug size={19} />, 'Outlet'], ['radiator', <Heater size={19} />, 'Radiator'],
-];
 type Toggle = 'showGrid' | 'snap' | 'showClearances' | 'cutaway' | 'walkMode';
 const s = () => useStore.getState();
 
@@ -23,10 +18,9 @@ function RailButton(props: { active?: boolean; label: string; title: string; ico
   );
 }
 
-/** Editing tools and display options, docked on the left edge of the canvas. */
+/** Editing tools and display options, docked on the left edge of the canvas. Doors, windows and fixtures live in the library. */
 export function ToolRail() {
   const ui = useStore((st) => st.ui);
-  const room = useActiveRoom();
   const planOrSplit: ViewMode = ui.view === 'split' ? 'split' : 'plan';
   const set = (patch: Partial<UIState>) => s().setUI(patch);
   const toggle = (key: Toggle, label: string, icon: ReactNode, testId: string, kbd?: string) => (
@@ -38,12 +32,6 @@ export function ToolRail() {
       <RailButton active={ui.tool === 'select'} label="Select" title="Select and move (V)" icon={<MousePointer2 size={19} />} testId="tool-select" onClick={() => set({ tool: 'select' })} />
       <RailButton active={ui.tool === 'draw-room'} label="Draw room" title="Draw a new room: click its corners"
         icon={<PenTool size={19} />} testId="tool-draw-room" onClick={() => set({ tool: 'draw-room', view: planOrSplit })} />
-      <div className="app-rail-sep" />
-      {OPENINGS.map(([kind, icon, label]) => (
-        <RailButton key={kind} active={ui.tool === 'place-opening' && ui.openingKind === kind} label={label}
-          title={room ? `Add a ${label.toLowerCase()}: click a wall` : 'Add a room first'} icon={icon} testId={`tool-${kind}`} disabled={!room}
-          onClick={() => set({ tool: 'place-opening', openingKind: kind, view: planOrSplit })} />
-      ))}
       <div className="app-rail-sep" />
       <RailButton active={ui.dialog === 'floorplan'} label="Trace plan" title="Trace rooms over a floor-plan image" icon={<ImageUp size={19} />}
         testId="open-floorplan" onClick={() => set({ dialog: ui.dialog === 'floorplan' ? 'none' : 'floorplan', view: planOrSplit })} />

@@ -118,3 +118,23 @@ test('"My stuff" is shared by every floor plan, and survives a reload', async ({
   await page.getByTestId('tab-my-stuff').click();
   await expect(page.getByTestId('my-item')).toHaveText(/Grandma armchair/);
 });
+
+test('doors, windows and fixtures live in the Furniture tab: search, collapse, pick then click a wall', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('home-demo').click();
+  await expect(page.getByTestId('tool-door')).toBeVisible();
+  await page.getByTestId('lib-search').fill('radiator');
+  await expect(page.getByTestId('tool-radiator')).toBeVisible();
+  await expect(page.getByTestId('tool-door')).toHaveCount(0);
+  await expect(page.getByTestId('lib-item')).toHaveCount(0);
+  await page.getByTestId('lib-search').fill('');
+  await page.getByTestId('tool-window').click();
+  await expect(page.getByTestId('tool-window')).toHaveAttribute('aria-pressed', 'true');
+  expect((await state(page)).ui).toMatchObject({ tool: 'place-opening', openingKind: 'window' });
+  await page.getByTestId('tool-window').click(); // again: back to Select
+  expect((await state(page)).ui.tool).toBe('select');
+  await page.getByTestId('fixtures-toggle').click();
+  await expect(page.getByTestId('tool-door')).toHaveCount(0);
+  await page.getByTestId('fixtures-toggle').click();
+  await expect(page.getByTestId('tool-door')).toBeVisible();
+});

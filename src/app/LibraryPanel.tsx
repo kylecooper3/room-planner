@@ -1,11 +1,12 @@
-import { Camera, Pencil, Plus, Search, SlidersHorizontal, SquareDashed, Trash } from 'lucide-react';
+import { AppWindow, Camera, ChevronDown, DoorOpen, Heater, Pencil, Plug, Plus, Search, SlidersHorizontal, SquareDashed, Trash } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { polygonArea } from '../core/geometry';
 import { formatArea, formatLength } from '../core/units';
 import { bodyColor } from '../editor2d/view';
 import { PRESETS } from '../models/presets';
 import { useStore } from '../store/store';
-import type { ItemDef, UnitSystem } from '../types';
+import type { ItemDef, OpeningKind, UnitSystem } from '../types';
 import { RenameInput } from './inputs';
 import { Menu, MenuItem } from './Menu';
 import { startOptions } from './WelcomeCard';
@@ -85,6 +86,7 @@ export function LibraryPanel() {
   const hasRoom = useStore((st) => st.project.rooms.length > 0);
   const noRoomHint = hasRoom ? undefined : 'Add a room first';
   const groups = groupPresets(query);
+  const fixtures = FIXTURES.filter(([, , label, hint]) => matches(query, `${label} ${hint}`));
 
   return (
     <aside className="app-library" aria-label="Library">
@@ -101,10 +103,11 @@ export function LibraryPanel() {
         <>
           <label className="app-search">
             <Search size={15} />
-            <input type="search" placeholder="Search furniture" aria-label="Search furniture" data-testid="lib-search" value={query} onChange={(e) => setQuery(e.target.value)} />
+            <input type="search" placeholder="Search furniture and fixtures" aria-label="Search furniture and fixtures" data-testid="lib-search" value={query} onChange={(e) => setQuery(e.target.value)} />
           </label>
           <div className="app-lib-list">
-            {groups.length === 0 && <p className="app-empty">No furniture matches “{query}”.</p>}
+            {fixtures.length > 0 && <FixturesSection items={fixtures} hasRoom={hasRoom} />}
+            {groups.length === 0 && fixtures.length === 0 && <p className="app-empty">Nothing matches “{query}”.</p>}
             {groups.map(([cat, defs]) => (
               <section key={cat}>
                 <h3 className="app-lib-cat">{CATEGORY_LABEL[cat] ?? cat}</h3>
@@ -152,5 +155,41 @@ export function LibraryPanel() {
         </div>
       )}
     </aside>
+  );
+}
+
+/** Things built into the walls rather than furniture: picked here, then placed by clicking a wall. */
+const FIXTURES: [OpeningKind, ReactNode, string, string][] = [
+  ['door', <DoorOpen size={16} />, 'Door', 'swing, opens into the room'],
+  ['window', <AppWindow size={16} />, 'Window', 'glass, any width'],
+  ['outlet', <Plug size={16} />, 'Outlet', 'power socket'],
+  ['radiator', <Heater size={16} />, 'Radiator', 'heater on the wall'],
+];
+const matches = (query: string, text: string) => text.toLowerCase().includes(query.trim().toLowerCase());
+
+function FixturesSection({ items, hasRoom }: { items: typeof FIXTURES; hasRoom: boolean }) {
+  const [open, setOpen] = useState(true);
+  const ui = useStore((st) => st.ui);
+  return (
+    <section className="app-fixtures" data-testid="fixtures-section">
+      <button className="app-lib-cat app-lib-toggle" aria-expanded={open} data-testid="fixtures-toggle" onClick={() => setOpen(!open)}>
+        <ChevronDown size={13} className="app-chevron" aria-hidden /> Doors, windows &amp; fixtures
+      </button>
+      {open && items.map(([kind, icon, label, hint]) => {
+        const active = ui.tool === 'place-opening' && ui.openingKind === kind;
+        return (
+          <button
+            key={kind} className={`app-lib-row${active ? ' active' : ''}`} aria-pressed={active} data-testid={`tool-${kind}`} disabled={!hasRoom}
+            title={hasRoom ? `Add a ${label.toLowerCase()}: then click a wall` : 'Add a room first'}
+            onClick={() => s().setUI(active ? { tool: 'select' } : { tool: 'place-opening', openingKind: kind, view: ui.view === 'split' ? 'split' : 'plan' })}
+          >
+            <span className="app-lib-icon" aria-hidden>{icon}</span>
+            <span className="app-lib-name">{label}</span>
+            {active ? <span className="app-lib-size app-lib-now">Click a wall</span> : <span className="app-lib-size">{hint}</span>}
+            <span className="app-lib-add" aria-hidden><Plus size={15} /></span>
+          </button>
+        );
+      })}
+    </section>
   );
 }
