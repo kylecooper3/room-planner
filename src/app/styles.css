@@ -112,6 +112,37 @@ svg.lucide { flex-shrink: 0; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: var(--sp-2); margin-top: var(--sp-5); }
 .note { padding: var(--sp-2) 10px; border-radius: var(--r-sm); background: var(--accent-soft); color: var(--text); font-size: 12px; }
 .note.error { background: var(--danger-soft); color: var(--danger); }
+.note.muted { background: var(--surface-2); color: var(--text-2); }
+.note p { margin: 0; }
+.note p + p { margin-top: 2px; }
+
+/* pill: suggestion / quick-pick chips */
+.app-pill {
+  display: inline-flex; align-items: center; gap: 6px; height: var(--ctl-h-sm); padding: 0 10px; border: 1px solid var(--border);
+  border-radius: 999px; background: var(--surface); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap;
+}
+.app-pill:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.app-pill:focus-visible { outline: none; box-shadow: var(--focus); }
+.app-pill.active { border-color: transparent; background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.app-pill small { color: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+.app-pill.active small { color: var(--accent); }
+
+/* slider: range input + its value at the right */
+.app-slider { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; height: var(--ctl-h); }
+.app-slider-value { min-width: 36px; text-align: right; color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; }
+.app-range { flex: 1; min-width: 0; height: 16px; margin: 0; background: transparent; cursor: pointer; -webkit-appearance: none; appearance: none; }
+.app-range:focus-visible { outline: none; }
+.field input.app-range { height: 16px; padding: 0; border: 0; background: transparent; }
+.app-range::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: var(--border); }
+.app-range::-moz-range-track { height: 4px; border-radius: 2px; background: var(--border); }
+.app-range::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--accent); }
+.app-range::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 14px; height: 14px; margin-top: -5px; border: 2px solid var(--accent); border-radius: 50%;
+  background: var(--surface); box-shadow: var(--shadow-sm);
+}
+.app-range::-moz-range-thumb { width: 10px; height: 10px; border: 2px solid var(--accent); border-radius: 50%; background: var(--surface); }
+.app-range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--accent-soft); }
+.app-range:hover::-webkit-slider-thumb { background: var(--accent-soft); }
 kbd {
   display: inline-block; min-width: 18px; padding: 0 5px; border: 1px solid var(--border); border-bottom-width: 2px;
   border-radius: 4px; background: var(--surface); color: var(--text-2); font: 11px/16px var(--font); text-align: center; white-space: nowrap;

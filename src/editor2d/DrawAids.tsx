@@ -3,8 +3,9 @@ import { useStore } from '../store/store';
 import { useBlobUrl } from '../store/blobs';
 import type { Vec2 } from '../types';
 import { Check, Undo2, X } from 'lucide-react';
+import { THEME } from '../theme';
 
-/** Hint bar + floating mini-toolbar shown while the draw-room tool is active. */
+/** Floating bar shown while the draw-room tool is active: the hint, then Undo point / Cancel / Finish room. */
 export function DrawHud({ count, canFinish, measure, onUndo, onFinish, onCancel }: {
   count: number; canFinish: boolean; measure: string | null; onUndo(): void; onFinish(): void; onCancel(): void;
 }) {
@@ -12,21 +13,23 @@ export function DrawHud({ count, canFinish, measure, onUndo, onFinish, onCancel 
     : count < 3 ? 'Click the next corner — right angles snap (hold Shift for any angle)'
       : 'Click the green circle or press Enter to finish';
   return (
-    <>
-      <div className="pe-hint" role="status" data-testid="draw-hint">
-        <strong>{hint}</strong>
-        {measure ? <span className="pe-measure" data-testid="draw-measure">{measure}</span> : <small>Wheel to zoom · drag or Space + drag to pan</small>}
+    <div className="pe-drawbar">
+      <div className="pe-drawbar-in app-float">
+        <div className="pe-drawbar-hint" role="status" data-testid="draw-hint">
+          <strong>{hint}</strong>
+          {measure ? <span className="pe-measure" data-testid="draw-measure">{measure}</span> : <small>Wheel to zoom · drag or Space + drag to pan</small>}
+        </div>
+        <div className="pe-drawbar-actions" data-testid="draw-hud">
+          <button type="button" className="btn ghost" data-testid="draw-undo" disabled={!count} title="Undo the last point (Backspace)" onClick={onUndo}><Undo2 size={16} aria-hidden /><span className="pe-drawbar-label">Undo point</span></button>
+          <button type="button" className="btn ghost" data-testid="draw-cancel" title="Cancel this room (Esc)" onClick={onCancel}><X size={16} aria-hidden /><span className="pe-drawbar-label">Cancel</span></button>
+          <button type="button" className="btn primary" data-testid="draw-finish" disabled={!canFinish} title="Finish the room (Enter, or click the first corner)" onClick={onFinish}><Check size={16} aria-hidden /><span className="pe-drawbar-label">Finish room</span></button>
+        </div>
       </div>
-      <div className="pe-minibar" data-testid="draw-hud">
-        <button type="button" className="btn" data-testid="draw-undo" disabled={!count} title="Undo the last point (Backspace)" onClick={onUndo}><Undo2 size={15} aria-hidden /> Undo point</button>
-        <button type="button" className="btn primary" data-testid="draw-finish" disabled={!canFinish} title="Finish the room (Enter, or click the first corner)" onClick={onFinish}><Check size={15} aria-hidden /> Finish room</button>
-        <button type="button" className="btn" data-testid="draw-cancel" title="Cancel this room (Esc)" onClick={onCancel}><X size={15} aria-hidden /> Cancel</button>
-      </div>
-    </>
+    </div>
   );
 }
 
-const LOUPE = 140;
+const LOUPE = 128;
 const ZOOM = 3;
 
 /** Magnifier: LOUPE px circle showing ZOOM× the underlay (full opacity) plus `children` (plan-space overlay), centred on `center`. */
@@ -42,7 +45,7 @@ export function Loupe({ center, k, view, pane, children }: {
   if (left + LOUPE > pane.w - 8) left = sx - LOUPE - 28;
   if (top < 8) top = sy + 28;
   const r = LOUPE / 2 / (ZOOM * k);
-  const line = { stroke: '#e5484d', strokeWidth: 1, vectorEffect: 'non-scaling-stroke' as const };
+  const line = { stroke: THEME.accent, strokeWidth: 1, vectorEffect: 'non-scaling-stroke' as const };
   return (
     <div className="pe-loupe" data-testid="loupe" style={{ left, top, width: LOUPE, height: LOUPE }}>
       <svg width={LOUPE} height={LOUPE} viewBox={`${center.x - r} ${center.y - r} ${2 * r} ${2 * r}`}>

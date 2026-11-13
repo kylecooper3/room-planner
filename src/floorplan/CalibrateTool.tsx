@@ -48,13 +48,16 @@ export function CalibrateTool() {
     setUI({ tool: 'select' });
   };
 
+  // Centred over the plan pane (not the window), like the other canvas overlays.
+  const pane = document.querySelector('[data-testid="plan-svg"][data-readonly="false"]')?.getBoundingClientRect();
+  const at = pane && { left: pane.left + pane.width / 2, top: pane.top + 12, maxWidth: Math.min(420, pane.width - 24) };
   const panel = pts.length < 2 ? (
-    <div className="fp-panel" role="status">
+    <div className="fp-panel" role="status" style={at}>
       <strong>{pts.length === 0 ? 'Click one end of a length you know (e.g. a labelled wall).' : 'Now click the other end.'}</strong>
       <span className="fp-hint">Nothing labelled? A standard interior door is about 30–32 in / 80 cm wide: click both sides of one. Esc to cancel.</span>
     </div>
   ) : (
-    <form className="fp-panel" onSubmit={apply}>
+    <form className="fp-panel" onSubmit={apply} style={at}>
       <label className="field">
         How long is that, really?
         <input data-testid="calibrate-distance" autoFocus value={text} onChange={(e) => { setText(e.target.value); setError(''); }} />

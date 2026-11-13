@@ -13,6 +13,8 @@ import { STYLE_SCHEMA, defaultStyle } from '../models/generate';
 import { defaultClearances } from '../models/presets';
 import { ItemModelView } from '../models/ItemModelView';
 import { analyzePhoto, mapPaletteToParts } from './analyze';
+import { THEME } from '../theme';
+import { X } from 'lucide-react';
 import './ic-creator.css';
 
 const DIMS = ['w', 'd', 'h'] as const;
@@ -57,13 +59,13 @@ function Framer({ size }: { size: Size3 }) {
 function Preview({ model, size }: { model: ItemDef['model']; size: Size3 }) {
   return (
     <Canvas className="ic-canvas" camera={{ fov: 35, near: 0.01, far: 100 }} dpr={[1, 2]}>
-      <color attach="background" args={['#fbf3e6']} />
-      <hemisphereLight args={['#fff8ee', '#d8c8b4', 0.9]} />
+      <color attach="background" args={[THEME.surface2]} />
+      <hemisphereLight args={['#ffffff', '#d6d6d0', 0.9]} />
       <directionalLight position={[3, 5, 4]} intensity={1.3} />
       <directionalLight position={[-3, 2, -2]} intensity={0.4} />
       <mesh rotation-x={-Math.PI / 2} position-y={-0.001}>
         <circleGeometry args={[Math.max(size.w, size.d) / 100 * 0.9, 48]} />
-        <meshStandardMaterial color="#efe3d2" />
+        <meshStandardMaterial color={THEME.border} />
       </mesh>
       <ItemModelView model={model} size={size} />
       <OrbitControls makeDefault target={[0, size.h / 200, 0]} enablePan={false} />
@@ -172,21 +174,21 @@ export function ItemCreator() {
 
   const hint = units === 'imperial' ? 'Plain numbers are inches. Also: 6\' 2", 190cm.' : 'Plain numbers are cm. Also: 1.9m, 75in.';
   const dimFields = (
-    <div className="ic-dims">
+    <>
       {DIMS.map((k) => (
         <label key={k} className="field">
-          {DIM_LABEL[k]}
+          <span>{DIM_LABEL[k]}</span>
           <input data-testid={`dim-${k}`} value={dims[k]} aria-invalid={!!dimError(dims[k], units)}
             onChange={(e) => setDims((d) => ({ ...d, [k]: e.target.value }))} />
           {dimError(dims[k], units) && <span className="ic-error" data-testid={`dim-${k}-error`}>{dimError(dims[k], units)}</span>}
         </label>
       ))}
       <p className="ic-hint">{hint}</p>
-    </div>
+    </>
   );
   const nameField = (
     <label className="field">
-      Name
+      <span>Name</span>
       <input data-testid="item-name" value={name} placeholder="e.g. Grandma's armchair" onChange={(e) => setName(e.target.value)} />
     </label>
   );
@@ -194,85 +196,95 @@ export function ItemCreator() {
   return (
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div className="dialog ic-dialog" role="dialog" aria-label={editDef ? 'Edit item' : 'New item'}>
-        <h2>{editDef ? 'Edit item' : step === 1 ? 'New item from a photo' : 'Tune your item'}</h2>
+        <header className="ic-head">
+          <h2>{editDef ? 'Edit item' : step === 1 ? 'New item from a photo' : 'Tune your item'}</h2>
+          <button type="button" className="btn ghost icon" title="Close" aria-label="Close" onClick={close}><X size={16} aria-hidden /></button>
+        </header>
+        <div className="ic-body">
 
-        {step === 1 ? (
-          <div className="ic-step1">
-            <div className="ic-photo">
-              {photoUrl ? <img src={photoUrl} alt="Your photo" /> : <span className="ic-placeholder">Choose a photo of your furniture</span>}
-              <input type="file" accept="image/*" data-testid="photo-file"
-                onChange={(e) => { setPhoto(e.target.files?.[0] ?? null); setAnalysis(null); }} />
-            </div>
-            <div className="ic-form">
-              {nameField}
-              {dimFields}
-              {busy && Object.values(progress).map((p) => (
-                <div key={p.stage} className="ic-progress" role="status" data-testid={`progress-${p.stage}`}>
-                  <span>{p.message ?? p.stage}</span>
-                  {p.progress !== undefined && <progress max={1} value={p.progress} />}
-                </div>
-              ))}
-              {busy && Object.values(progress).some((p) => p.progress !== undefined) && (
-                <p className="ic-hint">One-time download — the models are cached for offline use afterwards.</p>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="ic-step2">
-            <div className="ic-visuals">
-              <div className="ic-photo ic-checker">
-                {shownPhoto ? <img src={shownPhoto} alt="Item photo" /> : <span className="ic-placeholder">No photo</span>}
+          {step === 1 ? (
+            <div className="ic-step1">
+              <div className="ic-photo">
+                {photoUrl ? <img src={photoUrl} alt="Your photo" /> : <span className="ic-placeholder">Choose a photo of your furniture</span>}
+                <input type="file" accept="image/*" data-testid="photo-file"
+                  onChange={(e) => { setPhoto(e.target.files?.[0] ?? null); setAnalysis(null); }} />
               </div>
-              <div className="ic-preview"><Preview model={model} size={previewSize} /></div>
-            </div>
-            <div className="ic-form">
-              {analysis?.notes.map((n) => <p key={n} className="note">{n}</p>)}
-              {nameField}
-              {dimFields}
-              <label className="field">
-                Category
-                <select data-testid="category-select" value={category} onChange={(e) => pickCategory(e.target.value as Category)}>
-                  {CATEGORIES.map((c) => <option key={c} value={c}>{cap(c)}</option>)}
-                </select>
-              </label>
-              {!!analysis?.suggestions.length && (
-                <div className="ic-chips" aria-label="Suggestions">
-                  {analysis.suggestions.slice(0, 3).map((s) => (
-                    <button key={s.category} type="button" className={'ic-chip' + (s.category === category ? ' active' : '')}
-                      onClick={() => pickCategory(s.category)}>
-                      {cap(s.category)} <small>{Math.round(s.score * 100)}%</small>
-                    </button>
-                  ))}
-                </div>
-              )}
-              <StyleFields category={category} style={style} onChange={(k, v) => setStyle((s) => ({ ...s, [k]: v }))} />
-              <fieldset className="ic-colors">
-                <legend>Colours</legend>
-                {PART_ROLES.map((role) => (
-                  <div key={role} className="ic-color-row">
-                    <label>
-                      <input type="color" data-testid={`color-${role}`} value={colors[role]} onChange={(e) => setColor(role, e.target.value)} />
-                      {cap(role)}
-                    </label>
-                    {analysis?.palette.map((p) => (
-                      <button key={p.hex} type="button" className="ic-swatch" style={{ background: p.hex }}
-                        title={`Use ${p.hex} for ${role}`} aria-label={`Use ${p.hex} for ${role}`} onClick={() => setColor(role, p.hex)} />
-                    ))}
+              <div className="ic-form">
+                <section className="ic-section">
+                  {nameField}
+                  {dimFields}
+                </section>
+                {busy && Object.values(progress).map((p) => (
+                  <div key={p.stage} className="ic-progress" role="status" data-testid={`progress-${p.stage}`}>
+                    <span>{p.message ?? p.stage}</span>
+                    {p.progress !== undefined && <progress max={1} value={p.progress} />}
                   </div>
                 ))}
-              </fieldset>
-              <label className="field">
-                Material
-                <select data-testid="material-select" value={material} onChange={(e) => setMaterial(e.target.value as Material)}>
-                  {MATERIALS.map((m) => <option key={m} value={m}>{cap(m)}</option>)}
-                </select>
-              </label>
+                {busy && Object.values(progress).some((p) => p.progress !== undefined) && (
+                  <p className="ic-hint">One-time download — the models are cached for offline use afterwards.</p>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="ic-step2">
+              <div className="ic-visuals">
+                <div className="ic-photo ic-checker">
+                  {shownPhoto ? <img src={shownPhoto} alt="Item photo" /> : <span className="ic-placeholder">No photo</span>}
+                </div>
+                <div className="ic-preview"><Preview model={model} size={previewSize} /></div>
+              </div>
+              <div className="ic-form">
+                {!!analysis?.notes.length && <div className="note muted">{analysis.notes.map((n) => <p key={n}>{n}</p>)}</div>}
+                <section className="ic-section" aria-label="Details">
+                  <h3 className="app-heading">Details</h3>
+                  {nameField}
+                  {dimFields}
+                  <label className="field">
+                    <span>Category</span>
+                    <select data-testid="category-select" value={category} onChange={(e) => pickCategory(e.target.value as Category)}>
+                      {CATEGORIES.map((c) => <option key={c} value={c}>{cap(c)}</option>)}
+                    </select>
+                  </label>
+                  {!!analysis?.suggestions.length && (
+                    <div className="ic-chips" aria-label="Suggestions">
+                      {analysis.suggestions.slice(0, 3).map((s) => (
+                        <button key={s.category} type="button" className={'app-pill' + (s.category === category ? ' active' : '')}
+                          onClick={() => pickCategory(s.category)}>
+                          {cap(s.category)} <small>{Math.round(s.score * 100)}%</small>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </section>
+                <StyleFields category={category} style={style} onChange={(k, v) => setStyle((s) => ({ ...s, [k]: v }))} />
+                <section className="ic-section ic-colors" aria-label="Colours and material">
+                  <h3 className="app-heading">Colours &amp; material</h3>
+                  {PART_ROLES.map((role) => (
+                    <div key={role} className="field">
+                      <span>{cap(role)}</span>
+                      <span className="ic-color-row">
+                        <input type="color" data-testid={`color-${role}`} aria-label={`${cap(role)} colour`} value={colors[role]} onChange={(e) => setColor(role, e.target.value)} />
+                        {analysis?.palette.map((p) => (
+                          <button key={p.hex} type="button" className="ic-swatch" style={{ background: p.hex }}
+                            title={`Use ${p.hex} for ${role}`} aria-label={`Use ${p.hex} for ${role}`} onClick={() => setColor(role, p.hex)} />
+                        ))}
+                      </span>
+                    </div>
+                  ))}
+                  <label className="field">
+                    <span>Material</span>
+                    <select data-testid="material-select" value={material} onChange={(e) => setMaterial(e.target.value as Material)}>
+                      {MATERIALS.map((m) => <option key={m} value={m}>{cap(m)}</option>)}
+                    </select>
+                  </label>
+                </section>
+              </div>
+            </div>
+          )}
 
-        {saveError && <p className="note error">{saveError}</p>}
-        <div className="dialog-actions">
+          {saveError && <p className="note error">{saveError}</p>}
+        </div>
+        <div className="dialog-actions ic-foot">
           <button type="button" className="btn" onClick={close}>Cancel</button>
           {step === 1 ? (
             <>
@@ -296,21 +308,22 @@ function StyleFields({ category, style, onChange }: { category: Category; style:
   const schema = STYLE_SCHEMA[category] ?? [];
   if (!schema.length) return null;
   return (
-    <fieldset className="ic-style">
-      <legend>Style</legend>
+    <section className="ic-section ic-style" aria-label="Style">
+      <h3 className="app-heading">Style</h3>
       {schema.map((p) => {
         const v = style[p.key] ?? p.default;
         if (p.type === 'boolean') {
           return (
-            <label key={p.key} className="ic-check">
-              <input type="checkbox" checked={!!v} onChange={(e) => onChange(p.key, e.target.checked)} /> {p.label}
+            <label key={p.key} className="field ic-check">
+              <span>{p.label}</span>
+              <input type="checkbox" checked={!!v} onChange={(e) => onChange(p.key, e.target.checked)} />
             </label>
           );
         }
         if (p.type === 'select') {
           return (
             <label key={p.key} className="field">
-              {p.label}
+              <span>{p.label}</span>
               <select value={String(v)} onChange={(e) => onChange(p.key, e.target.value)}>
                 {(p.options ?? []).map((o) => <option key={o} value={o}>{cap(o)}</option>)}
               </select>
@@ -319,13 +332,16 @@ function StyleFields({ category, style, onChange }: { category: Category; style:
         }
         return (
           <label key={p.key} className="field">
-            {p.label} <span className="ic-value">{Number(v)}</span>
-            <input type="range" min={p.min ?? 0} max={p.max ?? 1} step={p.step ?? 0.01} value={Number(v)}
-              onChange={(e) => onChange(p.key, Number(e.target.value))} />
+            <span>{p.label}</span>
+            <span className="app-slider">
+              <input type="range" className="app-range" min={p.min ?? 0} max={p.max ?? 1} step={p.step ?? 0.01} value={Number(v)}
+                onChange={(e) => onChange(p.key, Number(e.target.value))} />
+              <span className="app-slider-value">{Number(v)}</span>
+            </span>
           </label>
         );
       })}
-    </fieldset>
+    </section>
   );
 }
 

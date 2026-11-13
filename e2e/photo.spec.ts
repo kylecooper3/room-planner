@@ -52,7 +52,7 @@ async function photoFlow(page: Page, c: Case, offline: boolean, shot?: string) {
   const [styleValue] = await firstSelect.selectOption({ index: opts.length - 1 });
   await page.getByTestId('color-accent').fill('#ff0000');
   if (shot) {
-    await page.locator('.ic-dialog').evaluate((el) => { for (let e: Element | null = el; e; e = e.parentElement) e.scrollTop = 0; });
+    await page.locator('.ic-body').evaluate((el) => { for (let e: Element | null = el; e; e = e.parentElement) e.scrollTop = 0; });
     await page.screenshot({ path: shot });
   }
   await page.getByTestId('save-item').click();
