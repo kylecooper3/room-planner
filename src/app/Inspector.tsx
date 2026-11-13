@@ -1,4 +1,4 @@
-import { CircleCheck, Copy, DoorOpen, Move, RotateCw, Scissors, SquareDashed, Sofa, Spline, Trash, TriangleAlert } from 'lucide-react';
+import { CircleCheck, Copy, DoorOpen, Move, RotateCw, Scissors, SquareDashed, SquareSplitHorizontal, Sofa, Spline, Trash, TriangleAlert } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { formatArea, formatLength } from '../core/units';
 import { polygonArea } from '../core/geometry';
@@ -11,14 +11,15 @@ import { THEME } from '../theme';
 import { useMemo } from 'react';
 import { LengthInput, NumberInput, TextInput } from './inputs';
 import { deleteCorner, normDeg } from './shortcuts';
-import { insertCorner, setWallLength } from '../editor2d/wallEdit';
+import { insertCorner, openGaps, openingsClash, setWallLength, toggleOpenWall } from '../editor2d/wallEdit';
 
 const s = useStore.getState;
 /** Item positions beyond 100 m from the origin are typos, not furniture. */
 const MAX_COORD = 10_000;
 const MIN_OPENING = 5;
 /** Sane opening widths per kind (cm); the max is further capped at the wall length minus a small margin. */
-const OPENING_WIDTH: Record<OpeningKind, [number, number]> = { door: [60, 200], window: [30, 400], radiator: [30, 300], outlet: [5, 30] };
+const OPENING_WIDTH: Record<OpeningKind, [number, number]> = { door: [60, 200], window: [30, 400], radiator: [30, 300], outlet: [5, 30], open: [10, MAX_COORD] };
+const KIND_NAME: Record<OpeningKind, string> = { door: 'Door', window: 'Window', radiator: 'Radiator', outlet: 'Outlet', open: 'Opening' };
 const WALL_MARGIN = 10;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const wallLength = (room: Room, wall: number) => {
@@ -116,24 +117,37 @@ function OpeningPanel({ opening: o, room, units }: { opening: Opening; room: Roo
   // Width within [5 cm, wall length]; the centre offset then keeps the whole opening on its wall.
   const place = (width: number, offset: number) => {
     const w = clamp(width, MIN_OPENING, Math.max(MIN_OPENING, len));
-    update({ width: w, offset: clamp(offset, w / 2, Math.max(w / 2, len - w / 2)) });
+    const next = { width: w, offset: clamp(offset, w / 2, Math.max(w / 2, len - w / 2)) };
+    if (!openingsClash(room.openings, { ...o, ...next })) update(next); // an open gap never overlaps another opening
   };
   const [wMin, wMax] = OPENING_WIDTH[o.kind];
-  const cap = (v: number) => Math.max(MIN_OPENING, Math.min(v, len - WALL_MARGIN));
+  const open = o.kind === 'open';
+  // An open gap may span the whole wall; built-in things keep a little wall at each end.
+  const cap = (v: number) => Math.max(MIN_OPENING, Math.min(v, len - (open ? 0 : WALL_MARGIN)));
   const widthRange: [number, number] = [cap(wMin), cap(wMax)];
   const swing: DoorSwing = o.swing ?? { hinge: 'start', side: 'in' };
   return (
     <>
-      <Head kind="Opening" icon={<DoorOpen size={13} />} title={o.kind[0].toUpperCase() + o.kind.slice(1)} sub={`On wall ${o.wall + 1}`} />
+      <Head kind="Opening" icon={open ? <SquareSplitHorizontal size={13} /> : <DoorOpen size={13} />} title={KIND_NAME[o.kind]}
+        sub={open ? `No wall here: open floor to ceiling · wall ${o.wall + 1}` : `On wall ${o.wall + 1}`} />
       <Section title="Size and position">
-      <div className="app-row">
-        <LengthInput label="Width" value={o.width} units={units} range={widthRange} testId="opening-width" onCommit={(width) => place(width, o.offset)} />
-        <LengthInput label="Height" value={o.height} units={units} testId="opening-height" onCommit={(height) => update({ height })} />
-      </div>
-      <div className="app-row">
-        <LengthInput label="Sill height" value={o.sill} units={units} allowZero testId="opening-sill" onCommit={(sill) => update({ sill })} />
-        <LengthInput label="Offset along wall" value={o.offset} units={units} allowZero testId="opening-offset" onCommit={(offset) => place(o.width, offset)} />
-      </div>
+      {open ? (
+        <div className="app-row">
+          <LengthInput label="Width" value={o.width} units={units} range={widthRange} testId="opening-width" onCommit={(width) => place(width, o.offset)} />
+          <LengthInput label="Offset along wall" value={o.offset} units={units} allowZero testId="opening-offset" onCommit={(offset) => place(o.width, offset)} />
+        </div>
+      ) : (
+        <>
+          <div className="app-row">
+            <LengthInput label="Width" value={o.width} units={units} range={widthRange} testId="opening-width" onCommit={(width) => place(width, o.offset)} />
+            <LengthInput label="Height" value={o.height} units={units} testId="opening-height" onCommit={(height) => update({ height })} />
+          </div>
+          <div className="app-row">
+            <LengthInput label="Sill height" value={o.sill} units={units} allowZero testId="opening-sill" onCommit={(sill) => update({ sill })} />
+            <LengthInput label="Offset along wall" value={o.offset} units={units} allowZero testId="opening-offset" onCommit={(offset) => place(o.width, offset)} />
+          </div>
+        </>
+      )}
       </Section>
       {o.kind === 'door' && (
         <Section title="Door swing">
@@ -148,7 +162,7 @@ function OpeningPanel({ opening: o, room, units }: { opening: Opening; room: Roo
         </Section>
       )}
       <Section>
-        <button className="btn danger" data-testid="opening-delete" onClick={() => { s().deleteOpening(o.id); s().select(null); }}><Trash size={15} /> Delete {o.kind}</button>
+        <button className="btn danger" data-testid="opening-delete" onClick={() => { s().deleteOpening(o.id); s().select(null); }}><Trash size={15} /> Delete {KIND_NAME[o.kind].toLowerCase()}</button>
       </Section>
     </>
   );
@@ -157,6 +171,8 @@ function OpeningPanel({ opening: o, room, units }: { opening: Opening; room: Roo
 function WallPanel({ room, index, units }: { room: Room; index: number; units: UnitSystem }) {
   const len = wallLength(room, index);
   const end = (index + 1) % room.points.length;
+  const gaps = openGaps(room, index);
+  const blocked = !gaps.length && room.openings.some((o) => o.wall === index);
   return (
     <>
       <Head kind="Wall" icon={<Spline size={13} />} title={`Wall ${index + 1}`} sub={room.name} />
@@ -168,6 +184,15 @@ function WallPanel({ room, index, units }: { room: Room; index: number; units: U
       <Section title="Shape">
         <button className="btn" data-testid="wall-split" title="Insert a corner in the middle of this wall" onClick={() => insertCorner(s(), room, index, 0.5)}><Scissors size={15} /> Split wall</button>
         <p className="app-muted">Tip: double-click a wall to add a corner exactly where you click.</p>
+      </Section>
+      <Section title="Open or closed">
+        <button className="btn" data-testid="wall-open-toggle" disabled={blocked} onClick={() => toggleOpenWall(s(), room, index)}
+          title={gaps.length ? 'Put the wall back (removes its open gaps)' : 'Remove this wall: the room opens straight into the space next to it'}>
+          <SquareSplitHorizontal size={15} /> {gaps.length ? 'Close this wall' : 'Open this wall'}
+        </button>
+        <p className="app-muted">{blocked ? 'Remove the door, window or fixture on this wall first.'
+          : gaps.length ? 'This wall has an open gap with no wall. Close it to put the wall back.'
+            : 'Opening a wall leaves no wall at all along it, e.g. where a room opens into the next one.'}</p>
       </Section>
     </>
   );

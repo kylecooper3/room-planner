@@ -5,17 +5,18 @@ import { buildWalls, type WallInfo } from './sceneMath';
 /** Walkable, see-through box through a door (plan cm): `dir` runs along the door's wall, `n` across it. */
 export interface Passage { center: Vec2; dir: Vec2; n: Vec2; halfW: number; halfD: number; bottom: number; top: number }
 
-/** One passage per door of every room, deep enough to cross both rooms' walls (2 × max wall thickness + 30 cm). */
+/** One passage per door and open gap of every room (gaps: floor to ceiling), deep enough to cross both rooms' walls (2 × max wall thickness + 30 cm). */
 export function housePassages(rooms: Pick<Room, 'points' | 'openings' | 'wallThickness'>[]): Passage[] {
   const maxT = Math.max(0, ...rooms.map((r) => r.wallThickness));
   const out: Passage[] = [];
   for (const r of rooms) {
     if (r.points.length < 3) continue;
     for (const o of r.openings) {
-      if (o.kind !== 'door') continue;
+      if (o.kind !== 'door' && o.kind !== 'open') continue;
       const g = getOpeningGeometry(r.points, o);
       const a = (g.angle * Math.PI) / 180;
-      out.push({ center: g.center, dir: { x: Math.cos(a), y: Math.sin(a) }, n: g.normalIn, halfW: o.width / 2, halfD: maxT + 15, bottom: o.sill, top: o.sill + o.height });
+      const [bottom, top] = o.kind === 'open' ? [0, Infinity] : [o.sill, o.sill + o.height]; // splitWall clamps to each wall's height
+      out.push({ center: g.center, dir: { x: Math.cos(a), y: Math.sin(a) }, n: g.normalIn, halfW: o.width / 2, halfD: maxT + 15, bottom, top });
     }
   }
   return out;

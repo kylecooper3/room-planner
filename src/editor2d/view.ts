@@ -48,6 +48,7 @@ export function openingDefaults(kind: OpeningKind): Pick<Opening, 'width' | 'hei
     case 'window': return { width: 120, height: 120, sill: 90 };
     case 'outlet': return { width: 8, height: 12, sill: 30 };
     case 'radiator': return { width: 100, height: 60, sill: 10 };
+    case 'open': return { width: 90, height: 0, sill: 0 };
   }
 }
 

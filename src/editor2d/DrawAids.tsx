@@ -6,18 +6,19 @@ import { Check, Undo2, X } from 'lucide-react';
 import { THEME } from '../theme';
 
 /** Floating bar shown while the draw-room tool is active: the hint, then Undo point / Cancel / Finish room. */
-export function DrawHud({ count, canFinish, measure, onUndo, onFinish, onCancel }: {
-  count: number; canFinish: boolean; measure: string | null; onUndo(): void; onFinish(): void; onCancel(): void;
+export function DrawHud({ count, free, canFinish, measure, onUndo, onFinish, onCancel }: {
+  count: number; free: boolean; canFinish: boolean; measure: string | null; onUndo(): void; onFinish(): void; onCancel(): void;
 }) {
   const hint = count === 0 ? 'Click the first corner of the room'
-    : count < 3 ? 'Click the next corner — right angles snap (hold Shift for any angle)'
+    : count < 3 ? 'Click the next corner — snaps when close (hold Alt for no snapping)'
       : 'Click the green circle or press Enter to finish';
   return (
     <div className="pe-drawbar">
       <div className="pe-drawbar-in app-float">
         <div className="pe-drawbar-hint" role="status" data-testid="draw-hint">
           <strong>{hint}</strong>
-          {measure ? <span className="pe-measure" data-testid="draw-measure">{measure}</span> : <small>Wheel to zoom · drag or Space + drag to pan</small>}
+          {measure ? <span className="pe-measure" data-testid="draw-measure">{measure}</span> : <small>Wheel to zoom · drag or Space + drag to pan · hold Alt: no snapping</small>}
+          {free && <small data-testid="draw-snap-off">Snapping off</small>}
         </div>
         <div className="pe-drawbar-actions" data-testid="draw-hud">
           <button type="button" className="btn ghost" data-testid="draw-undo" disabled={!count} title="Undo the last point (Backspace)" onClick={onUndo}><Undo2 size={16} aria-hidden /><span className="pe-drawbar-label">Undo point</span></button>

@@ -71,13 +71,10 @@
 .fp-rooms .app-room-row { padding-left: var(--sp-2); gap: 0; }
 .fp-rooms .fp-count { margin-right: 2px; }
 .fp-rooms .app-room-main { font-weight: 400; }
-.fp-proposal { display: flex; align-items: center; gap: var(--sp-2); height: var(--ctl-h); padding: 0 var(--sp-1) 0 var(--sp-2); border-radius: var(--r-sm); color: var(--text); }
-.fp-proposal:hover { background: var(--surface-2); }
 .fp-total { padding-right: var(--sp-1); }
 .fp-compare { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2); }
 .fp-compare strong { color: var(--text); font-weight: 600; }
 .fp-compare .ok { color: var(--success); }
-.fp-proposals { display: flex; flex-direction: column; gap: var(--sp-2); }
 .fp-tips { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: var(--sp-1); }
 .fp-dock > .note { margin: 0 var(--gutter); }
 

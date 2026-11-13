@@ -151,27 +151,6 @@ test('floor plan: scale by known total area; trace-next-room loop with naming', 
   expect((await state(page)).project.underlay!.cmPerPx).toBeCloseTo(1000 / TWO.w, 6);
 });
 
-test('floor plan: auto-detect proposes every room of a two-room plan', async ({ page }) => {
-  await uploadPlan(page, twoRoomPng());
-  await page.getByTestId('floorplan-skip-scale').click();
-  await expect(page.getByTestId('floorplan-detect')).toHaveAttribute('title', /textures, furniture and text/);
-  await page.getByTestId('floorplan-detect').click();
-  await expect(page.getByTestId('floorplan-proposal')).toHaveCount(2);
-  await expect(page.getByTestId('plan-proposal')).toHaveCount(2);
-  await page.getByTestId('floorplan-keep-all').click();
-  const { project } = await state(page);
-  expect(project.rooms).toHaveLength(2);
-  const u = project.underlay!;
-  for (const r of project.rooms) {
-    expect(r.points).toHaveLength(4);
-    const xs = r.points.map((p) => (p.x - u.x) / u.cmPerPx).sort((p, q) => p - q);
-    const want = xs[0] < 300 ? TWO.a : TWO.b;
-    expect(Math.abs(xs[0] - want.x0)).toBeLessThan(4);
-    expect(Math.abs(xs[3] - want.x1)).toBeLessThan(4);
-  }
-  await expect(page.getByTestId('floorplan-proposal')).toHaveCount(0);
-});
-
 // ───────── screenshots for the README: a 1-bedroom apartment ─────────
 const APT = {
   living: { x0: 80, y0: 80, x1: 560, y1: 440 }, kitchen: { x0: 572, y0: 80, x1: 800, y1: 280 },

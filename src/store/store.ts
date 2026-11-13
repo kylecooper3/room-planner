@@ -25,14 +25,27 @@ const mapActiveRoom = (p: Project, fn: (r: Room) => Room): Project =>
 const mapActiveLayout = (p: Project, fn: (l: Layout) => Layout): Project =>
   mapActiveRoom(p, (r) => ({ ...r, layouts: r.layouts.map((l) => (l.id === r.activeLayoutId ? fn(l) : l)) }));
 
-/** Drops openings whose wall vanished; clamps offsets to the wall length. */
-const fitOpenings = (openings: Opening[], points: Room['points']): Opening[] => {
+const wallLen = (points: Room['points'], i: number) => {
+  const a = points[i], b = points[(i + 1) % points.length];
+  return Math.hypot(b.x - a.x, b.y - a.y);
+};
+/**
+ * Drops openings whose wall vanished; clamps offsets to the wall length. Open gaps ('open') also stay within their wall,
+ * and one spanning its whole wall keeps spanning it when the walls only move (same corner count as `prev`).
+ */
+const fitOpenings = (openings: Opening[], points: Room['points'], prev?: Room['points']): Opening[] => {
   const n = points.length;
   return openings
     .filter((o) => o.wall >= 0 && o.wall < n)
     .map((o) => {
-      const a = points[o.wall], b = points[(o.wall + 1) % n];
-      const offset = Math.min(Math.max(o.offset, 0), Math.hypot(b.x - a.x, b.y - a.y));
+      const len = wallLen(points, o.wall);
+      if (o.kind === 'open') {
+        const full = prev?.length === n && o.width >= wallLen(prev, o.wall) - 0.5;
+        const width = full ? len : Math.min(o.width, len);
+        const offset = full ? len / 2 : Math.min(Math.max(o.offset, width / 2), len - width / 2);
+        return width === o.width && offset === o.offset ? o : { ...o, width, offset };
+      }
+      const offset = Math.min(Math.max(o.offset, 0), len);
       return offset === o.offset ? o : { ...o, offset };
     });
 };
@@ -105,7 +118,7 @@ export const useStore = create<AppState>((set, get) => {
       return id;
     },
     updateRoom: (roomId, patch) => commit((p) => mapRoom(p, roomId, (r) => ({
-      ...r, ...patch, openings: patch.points ? fitOpenings(r.openings, patch.points) : r.openings,
+      ...r, ...patch, openings: patch.points ? fitOpenings(r.openings, patch.points, r.points) : r.openings,
     }))),
     deleteRoom: (roomId) => commit((p) => {
       if (!p.rooms.some((r) => r.id === roomId)) return p;

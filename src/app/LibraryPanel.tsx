@@ -1,6 +1,6 @@
 import {
   AppWindow, Archive, Armchair, Bed, Box, Camera, ChevronDown, DoorOpen, Heater, LampDesk, LampFloor, Pencil, Plug, Plus,
-  RectangleHorizontal, Rows3, Search, ShelvingUnit, SlidersHorizontal, Sofa, SquareDashed, Sprout, Trash, Tv, Utensils,
+  RectangleHorizontal, Rows3, Search, ShelvingUnit, SlidersHorizontal, Sofa, SquareDashed, SquareSplitHorizontal, Sprout, Trash, Tv, Utensils,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
@@ -175,6 +175,7 @@ const FIXTURES: [OpeningKind, ReactNode, string][] = [
   ['window', <AppWindow size={15} />, 'Window'],
   ['outlet', <Plug size={15} />, 'Outlet'],
   ['radiator', <Heater size={15} />, 'Radiator'],
+  ['open', <SquareSplitHorizontal size={15} />, 'Opening'],
 ];
 const matches = (query: string, text: string) => text.toLowerCase().includes(query.trim().toLowerCase());
 
@@ -191,7 +192,7 @@ function FixturesSection({ items, hasRoom }: { items: typeof FIXTURES; hasRoom: 
         return (
           <button
             key={kind} className={`app-lib-row${active ? ' active' : ''}`} aria-pressed={active} data-testid={`tool-${kind}`} disabled={!hasRoom}
-            title={hasRoom ? `Add a ${label.toLowerCase()}: then click a wall` : 'Add a room first'}
+            title={hasRoom ? `Add ${kind === 'open' ? 'an open gap (no wall, no door)' : `a ${label.toLowerCase()}`}: then click a wall` : 'Add a room first'}
             onClick={() => s().setUI(active ? { tool: 'select' } : { tool: 'place-opening', openingKind: kind, view: ui.view === 'split' ? 'split' : 'plan' })}
           >
             <Tile>{icon}</Tile>

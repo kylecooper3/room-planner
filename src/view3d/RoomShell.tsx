@@ -93,7 +93,7 @@ function Fixture({ o, w }: { o: Opening; w: WallInfo }) {
   return <Box size={[o.width * M, o.height * M, depth * M]} pos={[o.offset * M, (o.sill + o.height / 2) * M, w.side * depth / 2 * M]} color={color} />;
 }
 
-interface WallRefs { full: THREE.Group | null; kerb: THREE.Mesh | null }
+interface WallRefs { full: THREE.Group | null; kerb: THREE.Group | null }
 
 interface RoomShellProps {
   room: Room; cutaway: boolean;
@@ -143,19 +143,22 @@ export function RoomShell({ room, cutaway, passages, onFloorClick, onFloorDouble
               ))}
               {w.ext1 > 0 && piece(w.length, w.length + w.ext1, 0, H, 'e1')}
               {w.openings.map((o) =>
-                o.kind === 'door' ? <Door key={o.id} o={o} w={w} t={t} />
+                o.kind === 'open' ? null
+                : o.kind === 'door' ? <Door key={o.id} o={o} w={w} t={t} />
                 : o.kind === 'window' ? <Window key={o.id} o={o} w={w} t={t} />
                 : <Fixture key={o.id} o={o} w={w} />)}
             </group>
-            <mesh
-              ref={(m) => { (refs.current[i] ??= { full: null, kerb: null }).kerb = m; }}
-              visible={false}
-              position={[(w.length + w.ext1 - w.ext0) / 2 * M, Math.min(KERB, H) / 2 * M, zc]}
-              receiveShadow
-            >
-              <boxGeometry args={[(w.length + w.ext0 + w.ext1) * M, Math.min(KERB, H) * M, t * M]} />
-              <primitive object={getSurfaceMaterial(THEME.planWall, 'paint')} attach="material" dispose={null} />
-            </mesh>
+            {/* Cut-away stand-in: a low kerb along the wall's floor-level pieces, so door and open gaps stay open. */}
+            <group ref={(g) => { (refs.current[i] ??= { full: null, kerb: null }).kerb = g; }} visible={false}>
+              {[[-w.ext0, 0], ...w.pieces.filter((p) => p.y0 === 0).map((p) => [p.u0, p.u1]), [w.length, w.length + w.ext1]]
+                .filter(([u0, u1]) => u1 - u0 > 0.01)
+                .map(([u0, u1], j) => (
+                  <mesh key={j} position={[(u0 + u1) / 2 * M, Math.min(KERB, H) / 2 * M, zc]} receiveShadow>
+                    <boxGeometry args={[(u1 - u0) * M, Math.min(KERB, H) * M, t * M]} />
+                    <primitive object={getSurfaceMaterial(THEME.planWall, 'paint')} attach="material" dispose={null} />
+                  </mesh>
+                ))}
+            </group>
           </group>
         );
       })}

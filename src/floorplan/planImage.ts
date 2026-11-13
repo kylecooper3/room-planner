@@ -1,11 +1,6 @@
 import { useStore } from '../store/store';
 import { putBlob } from '../store/blobs';
-import type { Underlay, Vec2 } from '../types';
-import { detectRooms } from './detectWalls';
-import { loadImageData } from './inkMask';
 import { defaultCmPerPx, freshSession, useTrace } from './traceSession';
-
-const MAX_DETECT_SIDE = 1000;
 
 /** Stores an image file as the project's floor-plan underlay (replacing any previous one). Returns an error message or null. */
 export async function addPlanImage(file: File): Promise<string | null> {
@@ -24,10 +19,3 @@ export async function addPlanImage(file: File): Promise<string | null> {
   }
 }
 
-/** Every enclosed room-sized region of the underlay image, in plan cm. */
-export async function detectPlanRooms(u: Underlay): Promise<Vec2[][]> {
-  const r = await loadImageData(u.imageId, MAX_DETECT_SIDE);
-  if (!r) return [];
-  const k = r.scale * u.cmPerPx;
-  return detectRooms(r.image).map((poly) => poly.map((p) => ({ x: u.x + p.x * k, y: u.y + p.y * k })));
-}

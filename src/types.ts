@@ -33,7 +33,8 @@ export interface Size3 { w: Cm; d: Cm; h: Cm }
 export type UnitSystem = 'imperial' | 'metric';
 
 // ───────────────────────── room ─────────────────────────
-export type OpeningKind = 'door' | 'window' | 'outlet' | 'radiator';
+/** 'open': a gap with no wall at all (full height, no door), e.g. a room opening straight into the next one. */
+export type OpeningKind = 'door' | 'window' | 'outlet' | 'radiator' | 'open';
 export interface DoorSwing {
   /** Which end of the opening the hinge is on: 'start' = nearer points[wall], 'end' = nearer the next point. */
   hinge: 'start' | 'end';
@@ -48,6 +49,7 @@ export interface Opening {
   /** Distance along the wall from points[wall] to the CENTRE of the opening. */
   offset: Cm;
   width: Cm;
+  /** Ignored for 'open' (always floor to ceiling). */
   height: Cm;
   /** Elevation of the opening's bottom edge above the floor (0 for doors). */
   sill: Cm;

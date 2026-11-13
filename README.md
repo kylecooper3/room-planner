@@ -78,9 +78,10 @@ The last plan you had open reopens on the next visit.
 ### Set up a room (three ways)
 A new, empty plan shows a small "Add your first room" card (the Rooms list's **Add room** menu offers the same):
 - **Enter dimensions**: type width, length and ceiling height; you get a rectangular room.
-- **Draw a room**: click corners in the plan. Corners snap to right angles, to other rooms' corners and walls, and to
-  dashed alignment guides through the corners you already placed (a small coloured marker says why the cursor jumped;
-  hold Shift for no snapping). A hint bar above the plan says what to do next and shows the current wall length and
+- **Draw a room**: click corners in the plan. The point follows the mouse and only snaps when a target is within about
+  10 screen pixels (at any zoom): other rooms' corners and walls, dashed alignment guides through the corners you already
+  placed, and a wall within 8° of horizontal/vertical straightens (a small coloured marker says what it snapped to; hold
+  Alt, or Shift, for no snapping). A hint bar above the plan says what to do next and shows the current wall length and
   area; click the green circle on the first corner or press Enter to finish, Backspace (↶ Undo point) removes the last
   corner, Esc cancels. Wheel zoom and drag / Space + drag / middle-drag panning keep working while drawing.
 - **Import a floor plan**: opens the **Trace floor plan** panel, docked beside the plan (it never blocks it), with five
@@ -95,9 +96,9 @@ A new, empty plan shows a small "Add your first room" card (the Rooms list's **A
   3. *Trace rooms*, one at a time: while tracing over the plan, corners also snap to the plan's wall lines (the edge
      between dark wall ink and paper), and a 3× magnifier follows the cursor. When a room closes the panel asks its
      name (Bedroom, Bathroom, Kitchen, Living room, Closet, Hallway, Balcony, or type one), then **Trace next room** or
-     **Done tracing**. The list shows each room's area, the running total and, with a listed area, the difference in %.
-     **Auto-detect rooms** proposes every enclosed room it finds (shown numbered on the plan) to keep or discard.
-  4. *Doors & windows*: click a wall where the plan shows a gap.
+     **Done tracing**. The list shows each room's area, the running total and, with a listed area, the difference in %;
+     rename any room there at any time (pencil, or double-click its name).
+  4. *Doors & windows*: click a wall where the plan shows a gap (**Add a door / window / an opening**).
   5. *Check & fix*: drag corners (they snap the same way), click a wall to type its exact length or split it, then
      **Finish**.
 
@@ -112,9 +113,11 @@ Or load the **demo bedroom** to look around first. A floor plan can hold several
 sidebar).
 
 ### Openings and room details
-Pick a door, window, outlet or radiator under **Doors, windows & fixtures** at the top of the Furniture tab and click a wall to place it; click one to edit it in the inspector: width, height,
+Pick a door, window, outlet, radiator or **Opening** under **Doors, windows & fixtures** at the top of the Furniture tab and click a wall to place it; click one to edit it in the inspector: width, height,
 sill height, offset along the wall, and for doors the hinge side and swing direction (in/out). Widths are kept between 5 cm
-and the length of the wall, and the opening stays on its wall. The room inspector sets the name, ceiling height, wall
+and the length of the wall, and the opening stays on its wall. An **Opening** is a gap with no wall at all (no door, floor
+to ceiling; walk mode passes through it), e.g. where a room opens straight into the next one; it never overlaps another
+opening. To remove a whole wall, click it and choose **Open this wall** in the inspector (**Close this wall** puts it back). The room inspector sets the name, ceiling height, wall
 colour (a palette of interior colours, or **Custom…** for any colour) and floor (wood, carpet or tile) and shows the floor area.
 
 ### Units
@@ -161,7 +164,7 @@ and the room.
 
 **Walk mode** (the Walk button over the 3D view): click the view to capture the mouse and look around (drag to look if mouse capture is unavailable);
 WASD or the arrow keys move, Shift sprints, Space jumps. You collide with walls and furniture and can walk through
-doorways from room to room. The first Esc releases the mouse; a second Esc (or O) returns to Overview.
+doorways and open gaps from room to room. The first Esc releases the mouse; a second Esc (or O) returns to Overview.
 
 ![The whole house in 3D](docs/screenshots/house-3d.png)
 
@@ -227,7 +230,7 @@ Everything runs in the browser on the CPU (WebAssembly). Each stage has a fallba
 | `src/core/` | pure geometry, units, snapping, collision and clearance checks |
 | `src/store/` | Zustand store, undo/redo, IndexedDB autosave and blob store, `.roomplan` import/export, demo room |
 | `src/editor2d/` | SVG plan editor and 2D PNG export |
-| `src/floorplan/` | floor-plan underlay, calibration, wall-ink snapping, room auto-detection, the docked tracing panel |
+| `src/floorplan/` | floor-plan underlay, calibration, wall-ink snapping, the docked tracing panel |
 | `src/models/` | parametric furniture generators, presets, PBR materials |
 | `src/photo/` | photo pipeline and the item creator dialog |
 | `src/view3d/` | react-three-fiber scene: room, items, orbit and walk cameras, cutaway, overlays, 3D PNG export |
@@ -240,10 +243,8 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the data flow and module boundaries.
 
 - One polygon per room: no interior walls, columns, stairs or multiple floors in a room. Openings are placed on the room's
   own walls only.
-- Auto-detect rooms is approximate: it proposes every enclosed room-sized area of the image, which works on clean plans
-  but can miss rooms or add false ones on textured plans with furniture and text drawn in. Check each proposal.
 - Snapping to the plan's walls needs dark (black or dark grey) wall lines; pale walls are not recognised.
-- The listed-area figure, the tracing step and auto-detect proposals are remembered only until the page is reloaded
+- The listed-area figure and the tracing step are remembered only until the page is reloaded
   (the rooms and the plan image are saved as usual). Matching a listed area does not move doors already placed.
 - The first photo analysis needs a one-time download of about 160 MB, and recognition runs on the CPU, so it can take a
   while on slow machines.

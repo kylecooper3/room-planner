@@ -17,7 +17,7 @@ SVG 2D editor, Vitest, Playwright. `src/types.ts` is the contract: all shared ty
 | `src/core/` | agent 1 | pure geometry, units, snapping, collision/clearance (`findIssues`) | types |
 | `src/store/` | agent 2 | Zustand store, undo/redo, selectors/hooks, blob store, IndexedDB autosave, `.roomplan` import/export, demo room | types, core, models/presets |
 | `src/editor2d/` | agent 3 | SVG plan editor: items, walls, openings, corner editing, draw-room tool, guides, dimensions, PNG export | types, core, store, floorplan layers |
-| `src/floorplan/` | agent 4 | underlay layer, calibration tool, auto-detect rooms, docked tracing panel | types, core, store, editor2d/planContext |
+| `src/floorplan/` | agent 4 | underlay layer, calibration tool, wall-ink snapping mask, docked tracing panel | types, core, store, editor2d/planContext |
 | `src/models/` | agent 5 | parametric generators, style schema, presets, PBR materials + procedural textures (`materials.tsx`), `ItemModelView` | types |
 | `src/photo/` | agent 6 | photo pipeline (segmentation, palette, classification, material, part mapping), `ItemCreator` UI | types, core/units, store, models |
 | `src/view3d/` | agent 7 | r3f scene: room shell, items, lighting, orbit + walk, cutaway, selection, clearance overlays, PNG export | types, core, store, models |

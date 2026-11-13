@@ -1,36 +1,64 @@
 import { describe, expect, it } from 'vitest';
-import { snapPoint, type InkSnap } from './drawSnap';
+import { cornerAngle, isRightAngle, snapPoint, type InkSnap } from './drawSnap';
 import { deleteCorner, insertCorner, setWallLength } from './wallEdit';
 import type { Room } from '../types';
 
 const square = [{ x: 0, y: 0 }, { x: 400, y: 0 }, { x: 400, y: 300 }, { x: 0, y: 300 }];
 
 describe('snapPoint', () => {
+  // pxPerCm 1: the 10 px radius is 10 cm.
+  const base = { align: [] as { x: number; y: number }[], rooms: [] as { x: number; y: number }[][], pxPerCm: 1 };
   it("snaps to another room's corner exactly, before anything else", () => {
-    const h = snapPoint({ raw: { x: 403, y: -4 }, prev: { x: 600, y: 50 }, align: [], rooms: [square], threshold: 10 });
+    const h = snapPoint({ ...base, raw: { x: 403, y: -4 }, prev: { x: 600, y: 50 }, rooms: [square] });
     expect(h).toMatchObject({ p: { x: 400, y: 0 }, kind: 'corner' });
   });
   it('right angle to the previous point, then aligns the free coordinate with earlier points (with a guide)', () => {
-    const h = snapPoint({ raw: { x: 7, y: 205 }, prev: { x: 200, y: 200 }, align: [{ x: 0, y: 0 }], rooms: [], threshold: 10 });
+    const h = snapPoint({ ...base, raw: { x: 7, y: 205 }, prev: { x: 200, y: 200 }, align: [{ x: 0, y: 0 }] });
     expect(h.p).toEqual({ x: 0, y: 200 });
     expect(h.kind).toBe('align');
     expect(h.guides).toEqual([{ a: { x: 0, y: 0 }, b: { x: 0, y: 200 } }]);
   });
   it('uses the image ink along the axis being drawn when nothing aligns', () => {
     const ink: InkSnap = (p, axis) => (axis === 'x' ? 250 : null);
-    const h = snapPoint({ raw: { x: 246, y: 103 }, prev: { x: 0, y: 100 }, align: [], rooms: [], ink, threshold: 10 });
+    const h = snapPoint({ ...base, raw: { x: 246, y: 103 }, prev: { x: 0, y: 100 }, ink });
     expect(h).toMatchObject({ p: { x: 250, y: 100 }, kind: 'ink' });
-    expect(snapPoint({ raw: { x: 246, y: 103 }, prev: { x: 0, y: 100 }, align: [], rooms: [], threshold: 10 }))
-      .toMatchObject({ p: { x: 246, y: 100 }, kind: 'angle' });
+    expect(snapPoint({ ...base, raw: { x: 246, y: 103 }, prev: { x: 0, y: 100 } })).toMatchObject({ p: { x: 246, y: 100 }, kind: 'angle' });
   });
   it('a nearer plan-wall face beats a corner across the wall', () => {
     const ink: InkSnap = (p, axis) => (axis === 'x' ? 412 : 0);
-    expect(snapPoint({ raw: { x: 412, y: 1 }, align: [], rooms: [square], ink, threshold: 15 })).toMatchObject({ p: { x: 412, y: 0 } });
+    expect(snapPoint({ ...base, raw: { x: 412, y: 1 }, rooms: [square], ink, pxPerCm: 10 / 15 })).toMatchObject({ p: { x: 412, y: 0 } });
   });
   it('free point: walls of other rooms, else per-axis ink', () => {
-    expect(snapPoint({ raw: { x: 150, y: 306 }, align: [], rooms: [square], threshold: 10 })).toMatchObject({ p: { x: 150, y: 300 }, kind: 'wall' });
+    expect(snapPoint({ ...base, raw: { x: 150, y: 306 }, rooms: [square] })).toMatchObject({ p: { x: 150, y: 300 }, kind: 'wall' });
     const ink: InkSnap = (p, axis) => (axis === 'x' ? 1000 : 2000);
-    expect(snapPoint({ raw: { x: 1003, y: 1996 }, align: [], rooms: [square], ink, threshold: 10 })).toMatchObject({ p: { x: 1000, y: 2000 }, kind: 'ink' });
+    expect(snapPoint({ ...base, raw: { x: 1003, y: 1996 }, rooms: [square], ink })).toMatchObject({ p: { x: 1000, y: 2000 }, kind: 'ink' });
+  });
+
+  it('the radius is in screen px: the same 9 cm snaps zoomed out but not zoomed in', () => {
+    const raw = { x: 409, y: 0 }; // 9 cm from the corner (400, 0)
+    expect(snapPoint({ ...base, raw, rooms: [square], pxPerCm: 1 }).kind).toBe('corner'); // 9 px
+    expect(snapPoint({ ...base, raw, rooms: [square], pxPerCm: 0.25 }).kind).toBe('corner'); // 2.25 px
+    expect(snapPoint({ ...base, raw: { x: 409, y: -9 }, rooms: [square], pxPerCm: 2 })).toEqual({ p: { x: 409, y: -9 }, kind: null, guides: [] }); // 18 px+
+    // Zoomed out, a corner 32 cm away is 8 px: snaps; at 1 px/cm it is 32 px: does not.
+    expect(snapPoint({ ...base, raw: { x: 425, y: -20 }, rooms: [square], pxPerCm: 0.25 }).kind).toBe('corner');
+    expect(snapPoint({ ...base, raw: { x: 425, y: -20 }, rooms: [square], pxPerCm: 1 }).kind).toBe(null);
+  });
+  it('nothing beyond the radius moves the point, ink included', () => {
+    const ink: InkSnap = () => 0; // a (buggy) ink callback reporting a boundary far away
+    const raw = { x: 500, y: 600 };
+    expect(snapPoint({ ...base, raw, rooms: [square], ink, align: [{ x: 489, y: 611 }] })).toEqual({ p: raw, kind: null, guides: [] });
+  });
+  it('right angles lock only within the angle tolerance and the radius; otherwise the point follows the mouse', () => {
+    const prev = { x: 0, y: 0 };
+    expect(snapPoint({ ...base, raw: { x: 200, y: 6 }, prev }).p).toEqual({ x: 200, y: 0 }); // 1.7°, 6 px
+    expect(snapPoint({ ...base, raw: { x: 200, y: 40 }, prev })).toMatchObject({ p: { x: 200, y: 40 }, kind: null }); // 11°: free
+    expect(snapPoint({ ...base, raw: { x: 2000, y: 30 }, prev })).toMatchObject({ p: { x: 2000, y: 30 }, kind: null }); // 0.9° but 30 px off
+    expect(snapPoint({ ...base, raw: { x: 2000, y: 30 }, prev, pxPerCm: 0.25 }).p).toEqual({ x: 2000, y: 0 }); // zoomed out: 7.5 px
+    expect(snapPoint({ ...base, raw: { x: 5, y: 300 }, prev }).p).toEqual({ x: 0, y: 300 }); // vertical
+  });
+  it('free (Alt held / snapping off) returns the cursor exactly', () => {
+    const raw = { x: 401, y: 1 };
+    expect(snapPoint({ ...base, raw, rooms: [square], prev: { x: 0, y: 0 }, free: true })).toEqual({ p: raw, kind: null, guides: [] });
   });
 });
 
@@ -100,5 +128,17 @@ describe('deleteCorner', () => {
     expect(run(0, []).ok).toBe(true);
     const tri = { id: 'r', points: pts.slice(0, 3), openings: [] } as unknown as Room;
     expect(deleteCorner({} as never, tri, 0)).toBe(false);
+  });
+});
+
+describe('cornerAngle / isRightAngle', () => {
+  const o = { x: 0, y: 0 };
+  it('square, acute, obtuse and degenerate corners', () => {
+    expect(cornerAngle({ x: 100, y: 0 }, o, { x: 0, y: 100 })).toBeCloseTo(90);
+    expect(isRightAngle(cornerAngle({ x: 100, y: 0 }, o, { x: 0, y: 100 }))).toBe(true);
+    expect(cornerAngle({ x: 100, y: 0 }, o, { x: 100, y: 100 })).toBeCloseTo(45);
+    expect(isRightAngle(cornerAngle({ x: 100, y: 0 }, o, { x: 3, y: 100 }))).toBe(false); // ~88.3°
+    expect(cornerAngle({ x: 100, y: 0 }, o, { x: -100, y: 1 })).toBeGreaterThan(179);
+    expect(cornerAngle(o, o, { x: 0, y: 100 })).toBeNull();
   });
 });

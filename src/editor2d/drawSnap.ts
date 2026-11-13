@@ -1,11 +1,16 @@
 import type { Segment, Vec2 } from '../types';
-import { projectOnWalls, snapRightAngle } from '../core/geometry';
+import { projectOnWalls } from '../core/geometry';
 
 /** Why the cursor jumped: drawn as a small coloured marker so the user can tell. */
 export type SnapKind = 'corner' | 'wall' | 'align' | 'ink' | 'angle';
 export interface SnapHit { p: Vec2; kind: SnapKind | null; guides: Segment[] }
 /** Nearest ink/paper boundary of the floor-plan image along `axis` through p, within maxCm; the plan coordinate or null. */
 export type InkSnap = (p: Vec2, axis: 'x' | 'y', maxCm: number) => number | null;
+
+/** Snap radius in SCREEN px: a snap only happens when its target is this close to the cursor, at any zoom. */
+export const SNAP_PX = 10;
+/** Right-angle assist: the wall being drawn locks to horizontal/vertical only within this many degrees (and SNAP_PX). */
+export const ANGLE_TOL_DEG = 8;
 
 export interface SnapInput {
   raw: Vec2;
@@ -16,11 +21,14 @@ export interface SnapInput {
   /** Other rooms' outlines: their corners and walls attract the cursor. */
   rooms: Vec2[][];
   ink?: InkSnap | null;
-  /** Snap distance, cm. */
-  threshold: number;
+  /** Current zoom (screen px per cm): the radius is SNAP_PX / pxPerCm cm. */
+  pxPerCm: number;
+  /** Snapping off (Alt held, or snapping toggled off): the point is exactly the cursor. */
+  free?: boolean;
 }
 
 const d2 = (a: Vec2, b: Vec2) => Math.hypot(a.x - b.x, a.y - b.y);
+const NONE = (p: Vec2): SnapHit => ({ p, kind: null, guides: [] });
 
 /** Snaps one coordinate to the nearer of: alignment with a known point, the plan's wall ink. */
 function snapAxis(p: Vec2, axis: 'x' | 'y', srcs: Vec2[], ink: InkSnap | null | undefined, t: number) {
@@ -30,38 +38,48 @@ function snapAxis(p: Vec2, axis: 'x' | 'y', srcs: Vec2[], ink: InkSnap | null | 
     if (d <= bd) { bd = d; best = s; }
   }
   const v = ink?.(p, axis, t);
+  const inkOk = v != null && Math.abs(v - p[axis]) <= t;
   // The nearer wins; on a tie the exact alignment (so neighbouring rooms share wall lines exactly).
-  if (best && (v == null || bd <= Math.abs(v - p[axis]))) return { value: best[axis], kind: 'align' as const, src: best };
-  return v == null ? null : { value: v, kind: 'ink' as const, src: null };
+  if (best && (!inkOk || bd <= Math.abs(v - p[axis]))) return { value: best[axis], kind: 'align' as const, src: best };
+  return inkOk ? { value: v, kind: 'ink' as const, src: null } : null;
 }
 
 /**
- * Drawing / corner-drag snapping. Candidates: other rooms' corners, other rooms' walls (free points only), and the
- * axis result (right angle to prev, then alignment > ink on the free coordinate(s)). The one that moves the cursor
- * least wins, so a corner across a thin wall never steals a click that sits right on the plan's wall face.
+ * Drawing / corner-drag snapping. Every candidate must lie within SNAP_PX screen px of the cursor; the one that moves the
+ * cursor least wins (corners count double so a click near a corner lands on it). Candidates: other rooms' corners,
+ * their walls (free points only), and per-axis alignment / plan ink. With `prev`, a wall within ANGLE_TOL_DEG of horizontal/vertical locks to it
+ * (right-angle assist) and only its free coordinate snaps; beyond that the point follows the mouse.
  */
-export function snapPoint({ raw, prev, align, rooms, ink, threshold: t }: SnapInput): SnapHit {
+export function snapPoint({ raw, prev, align, rooms, ink, pxPerCm, free }: SnapInput): SnapHit {
+  if (free || !(pxPerCm > 0)) return NONE(raw);
+  const t = SNAP_PX / pxPerCm;
   const cands: (SnapHit & { d: number })[] = [];
   let corner: Vec2 | null = null, cd = t;
   for (const r of rooms) for (const c of r) { const d = d2(c, raw); if (d <= cd) { cd = d; corner = c; } }
-  // Corners pull twice as hard: a click near a corner should land on it, not on one of its walls.
   if (corner) cands.push({ p: { ...corner }, kind: 'corner', guides: [], d: cd / 2 });
 
+  // Other rooms' walls attract free points only: while drawing, the right-angle lock and alignment do that job.
+  let wall: Vec2 | null = null, wd = t;
+  for (const r of prev ? [] : rooms) {
+    if (r.length < 2) continue;
+    const hit = projectOnWalls(r, raw);
+    if (hit.distance <= wd) { wd = hit.distance; wall = hit.point; }
+  }
+  if (wall) cands.push({ p: { ...wall }, kind: 'wall', guides: [], d: wd });
+
   const srcs = [...align, ...rooms.flat()];
-  if (prev) {
-    const p = snapRightAngle(prev, raw);
-    const axis = p.y === prev.y ? 'x' : 'y'; // the coordinate still free along the wall being drawn
+  // Right-angle lock: the coordinate across the wall is fixed to prev's, only the one along it snaps.
+  const dx = prev ? Math.abs(raw.x - prev.x) : 0, dy = prev ? Math.abs(raw.y - prev.y) : 0;
+  const tan = Math.tan((ANGLE_TOL_DEG * Math.PI) / 180);
+  const lock: 'x' | 'y' | null = !prev ? null
+    : dy <= t && dy <= dx * tan ? 'y' : dx <= t && dx <= dy * tan ? 'x' : null;
+  if (prev && lock) {
+    const p = lock === 'y' ? { x: raw.x, y: prev.y } : { x: prev.x, y: raw.y };
+    const axis = lock === 'y' ? 'x' : 'y';
     const s = snapAxis(p, axis, srcs, ink, t);
     const q = s ? { ...p, [axis]: s.value } : p;
     cands.push({ p: q, kind: s?.kind ?? 'angle', guides: s?.src ? [{ a: s.src, b: q }] : [], d: d2(q, raw) });
   } else {
-    let wall: Vec2 | null = null, wd = t;
-    for (const r of rooms) {
-      if (r.length < 2) continue;
-      const hit = projectOnWalls(r, raw);
-      if (hit.distance <= wd) { wd = hit.distance; wall = hit.point; }
-    }
-    if (wall) cands.push({ p: { ...wall }, kind: 'wall', guides: [], d: wd });
     const sx = snapAxis(raw, 'x', srcs, ink, t), sy = snapAxis(raw, 'y', srcs, ink, t);
     if (sx || sy) {
       const p = { x: sx?.value ?? raw.x, y: sy?.value ?? raw.y };
@@ -69,7 +87,18 @@ export function snapPoint({ raw, prev, align, rooms, ink, threshold: t }: SnapIn
       cands.push({ p, kind: sx?.kind === 'align' || sy?.kind === 'align' ? 'align' : 'ink', guides, d: d2(p, raw) });
     }
   }
-  if (!cands.length) return { p: raw, kind: null, guides: [] };
+  if (!cands.length) return NONE(raw);
   const best = cands.reduce((a, b) => (b.d < a.d - 1e-9 ? b : a)); // ties keep the earlier (corner > wall > axis)
   return { p: best.p, kind: best.kind, guides: best.guides };
 }
+
+/** Interior angle at corner `c` between the walls to `a` and to `b`, in degrees (0..180); null for a zero-length wall. */
+export const cornerAngle = (a: Vec2, c: Vec2, b: Vec2): number | null => {
+  const ux = a.x - c.x, uy = a.y - c.y, vx = b.x - c.x, vy = b.y - c.y;
+  const lu = Math.hypot(ux, uy), lv = Math.hypot(vx, vy);
+  if (lu < 1e-6 || lv < 1e-6) return null;
+  return (Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy) / (lu * lv)))) * 180) / Math.PI;
+};
+/** Within this many degrees of 90 a corner counts as square (snapping lands exactly on 90). */
+export const RIGHT_TOL_DEG = 0.25;
+export const isRightAngle = (deg: number | null) => deg !== null && Math.abs(deg - 90) <= RIGHT_TOL_DEG;

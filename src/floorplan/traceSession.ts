@@ -17,12 +17,10 @@ export interface TraceSession {
   counted: Record<string, boolean>;
   /** Room just traced, waiting for a name. */
   namingId: string | null;
-  /** Auto-detected outlines (plan cm) the user has not kept or discarded yet. */
-  proposals: Vec2[][];
   collapsed: boolean;
 }
 export const freshSession = (): TraceSession => ({
-  step: null, skipScale: false, knownArea: null, counted: {}, namingId: null, proposals: [], collapsed: false,
+  step: null, skipScale: false, knownArea: null, counted: {}, namingId: null, collapsed: false,
 });
 export const useTrace = create<TraceSession>(() => freshSession());
 

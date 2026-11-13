@@ -3,19 +3,18 @@ import { useStore } from '../store/store';
 import { formatArea } from '../core/units';
 import { polygonArea } from '../core/geometry';
 import type { OpeningKind, Room } from '../types';
-import { addPlanImage, detectPlanRooms } from './planImage';
+import { addPlanImage } from './planImage';
+import { RenameInput } from '../app/inputs';
 import {
   countsTowardArea, derivedStep, freshSession, isCalibrated, parseArea, scaleToArea, scaleWords, useTrace,
 } from './traceSession';
 import {
-  AppWindow, ArrowRight, Check, DoorOpen, PanelLeftClose, PanelLeftOpen, PenLine, Ruler, Trash2, WandSparkles, X,
+  AppWindow, ArrowRight, Check, DoorOpen, PanelLeftClose, PanelLeftOpen, Pencil, PenLine, Ruler, SquareSplitHorizontal, Trash2, X,
 } from 'lucide-react';
 import './fp-floorplan.css';
 
 const s = useStore.getState;
 const NAMES = ['Bedroom', 'Bathroom', 'Kitchen', 'Living room', 'Closet', 'Hallway', 'Balcony'];
-const DETECT_TIP = 'Looks for enclosed rooms in the image and proposes each one. Works best on clean plans: textures, '
-  + 'furniture and text can confuse it, so keep only the proposals that look right.';
 
 /** "Bedroom", or "Bedroom 2" when that name is taken by another room. */
 function uniqueName(name: string, rooms: Room[], self: string) {
@@ -90,7 +89,7 @@ export function TracePanel() {
   const view = useStore((st) => st.ui.view);
   const t = useTrace();
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [renaming, setRenaming] = useState<string | null>(null);
   const [areaText, setAreaText] = useState(() => (t.knownArea ? formatArea(t.knownArea, project.units) : ''));
   const [areaOpen, setAreaOpen] = useState(false);
   const { underlay: u, units, rooms } = project;
@@ -137,31 +136,6 @@ export function TracePanel() {
     s().updateUnderlay(r.underlay);
     for (const room of r.rooms) s().updateRoom(room.id, { points: room.points });
     s().endBatch();
-  };
-  const detect = async () => {
-    if (!u) return;
-    setError('');
-    setBusy(true);
-    try {
-      const found = await detectPlanRooms(u);
-      useTrace.setState({ proposals: found });
-      if (!found.length) setError('No enclosed rooms found. Trace them yourself: “Trace a room”.');
-    } catch {
-      setError('Auto-detect failed on this image. Trace the rooms yourself instead.');
-    } finally {
-      setBusy(false);
-    }
-  };
-  const keep = (i: number) => {
-    const poly = t.proposals[i];
-    const id = s().addRoom({ points: poly });
-    useTrace.setState({ proposals: t.proposals.filter((_, j) => j !== i), namingId: id, step: 3 });
-  };
-  const keepAll = () => {
-    s().beginBatch();
-    for (const poly of t.proposals) s().addRoom({ points: poly });
-    s().endBatch();
-    useTrace.setState({ proposals: [] });
   };
   // The image blob is kept so undo can restore it; unreferenced blobs are cleaned up at the next startup.
   const removePlan = () => {
@@ -262,15 +236,27 @@ export function TracePanel() {
                       data-testid="floorplan-room-counted" checked={countsTowardArea(r, t.counted)}
                       onChange={(e) => useTrace.setState({ counted: { ...t.counted, [r.id]: e.target.checked } })} />
                   )}
-                  <button type="button" className="app-room-main" title="Make this the active room" onClick={() => s().setActiveRoom(r.id)}>
+                  {renaming === r.id ? (
+                    <RenameInput label="Room name" value={r.name} onDone={(name) => {
+                      setRenaming(null);
+                      if (name) s().updateRoom(r.id, { name: uniqueName(name, rooms, r.id) });
+                    }} />
+                  ) : (
+                  <>
+                  <button type="button" className="app-room-main" title="Make this the active room (double-click to rename)"
+                    onClick={() => s().setActiveRoom(r.id)} onDoubleClick={() => setRenaming(r.id)}>
                     <span className="app-row-name">{r.name}</span>
                     <span className="app-row-meta">{formatArea(polygonArea(r.points), units)}</span>
                   </button>
                   <span className="app-row-actions">
+                    <button type="button" className="btn ghost icon app-small" aria-label={`Rename ${r.name}`} title="Rename this room" data-testid="floorplan-room-rename"
+                      onClick={() => setRenaming(r.id)}><Pencil size={15} aria-hidden /></button>
                     <button type="button" className="btn ghost icon app-small danger" aria-label={`Delete ${r.name}`} title="Delete this room (undo with Ctrl+Z)" onClick={() => s().deleteRoom(r.id)}>
                       <Trash2 size={15} aria-hidden />
                     </button>
                   </span>
+                  </>
+                  )}
                 </li>
               ))}
             </ul>
@@ -285,43 +271,21 @@ export function TracePanel() {
               )}
             </div>
           )}
-          {t.proposals.length > 0 && (
-            <div className="fp-proposals">
-              <p className="fp-lead">Auto-detect found {t.proposals.length} room{t.proposals.length > 1 ? 's' : ''} (blue, numbered on the plan):</p>
-              <ul className="fp-rooms">
-                {t.proposals.map((poly, i) => (
-                  <li key={i} data-testid="floorplan-proposal" className="fp-proposal">
-                    <span className="app-row-name">#{i + 1}</span>
-                    <span className="app-row-meta">{formatArea(polygonArea(poly), units)}</span>
-                    <button type="button" className="btn app-small" data-testid="floorplan-keep" onClick={() => keep(i)}>Keep</button>
-                    <button type="button" className="btn ghost icon app-small" aria-label={`Discard proposal ${i + 1}`} title="Discard"
-                      onClick={() => useTrace.setState({ proposals: t.proposals.filter((_, j) => j !== i) })}><X size={15} aria-hidden /></button>
-                  </li>
-                ))}
-              </ul>
-              <div className="fp-row">
-                <button type="button" className="btn" data-testid="floorplan-keep-all" onClick={keepAll}><Check size={15} aria-hidden />Keep all</button>
-                <button type="button" className="btn ghost" onClick={() => useTrace.setState({ proposals: [] })}>Discard all</button>
-              </div>
-            </div>
-          )}
-          <div className="fp-row">
-            <button type="button" className="btn" data-testid="floorplan-detect" disabled={!u || busy} title={DETECT_TIP} onClick={detect}>
-              <WandSparkles size={15} aria-hidden />{busy ? 'Looking…' : 'Auto-detect rooms'}
-            </button>
-          </div>
         </Step>
 
         <Step n={4} title="Doors & windows" done={done[3]} current={step === 4}>
-          <p>Add doors and windows to the walls you traced.</p>
+          <p>Add doors, windows and open gaps to the walls you traced.</p>
           <div className="fp-row">
             <button type="button" className={`btn${placing('door') ? ' active' : ''}`} data-testid="floorplan-add-door" disabled={!rooms.length}
               onClick={() => s().setUI({ tool: 'place-opening', openingKind: 'door', view: planView })}><DoorOpen size={15} aria-hidden />Add a door</button>
             <button type="button" className={`btn${placing('window') ? ' active' : ''}`} data-testid="floorplan-add-window" disabled={!rooms.length}
               onClick={() => s().setUI({ tool: 'place-opening', openingKind: 'window', view: planView })}><AppWindow size={15} aria-hidden />Add a window</button>
+            <button type="button" className={`btn${placing('open') ? ' active' : ''}`} data-testid="floorplan-add-opening" disabled={!rooms.length}
+              title="A gap with no wall and no door, e.g. where a room opens straight into the next"
+              onClick={() => s().setUI({ tool: 'place-opening', openingKind: 'open', view: planView })}><SquareSplitHorizontal size={15} aria-hidden />Add an opening</button>
           </div>
-          {(placing('door') || placing('window')) && <p className="note">Now click a wall on the plan.</p>}
-          <p className="fp-tip">Click on a wall where the plan shows a gap. Each click places one; click it afterwards to set its width or swing in the inspector.</p>
+          {(placing('door') || placing('window') || placing('open')) && <p className="note">Now click a wall on the plan.</p>}
+          <p className="fp-tip">Click on a wall where the plan shows a gap. Each click places one; click it afterwards to set its width or swing in the inspector. To open a whole wall, click the wall and choose “Open this wall”.</p>
           <div className="fp-row"><button type="button" className="btn primary" data-testid="floorplan-next-4" onClick={() => go(5)}>Next: check &amp; fix<ArrowRight size={15} aria-hidden /></button></div>
         </Step>
 

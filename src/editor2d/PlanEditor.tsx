@@ -13,15 +13,14 @@ import {
 import { formatArea, formatLength } from '../core/units';
 import { UnderlayLayer } from '../floorplan/UnderlayLayer';
 import { CalibrateTool } from '../floorplan/CalibrateTool';
-import { ProposalLayer } from '../floorplan/ProposalLayer';
 import { useInkSnap } from '../floorplan/inkMask';
 import { useTrace } from '../floorplan/traceSession';
 import { PlanViewContext } from './planContext';
 import type { PlanView } from './planContext';
 import { DrawHud, Loupe } from './DrawAids';
-import { snapPoint } from './drawSnap';
+import { cornerAngle, isRightAngle, snapPoint } from './drawSnap';
 import type { SnapHit, SnapKind } from './drawSnap';
-import { insertCorner } from './wallEdit';
+import { insertCorner, openingsClash } from './wallEdit';
 import {
   bodyColor, boundsOf, clampOffset, dist, fitView, gridStep, openingDefaults, rotationFromPointer, screenToPlan,
   wallOutline, zoomAbout,
@@ -40,6 +39,7 @@ export interface PlanEditorProps {
 const INK = THEME.planLabel;
 const WALL = THEME.planWall;
 const ACCENT = THEME.accent;
+const norm = (a: Vec2, c: Vec2) => { const l = Math.hypot(a.x - c.x, a.y - c.y) || 1; return { x: (a.x - c.x) / l, y: (a.y - c.y) / l }; };
 const DANGER = THEME.danger;
 const GUIDE = '#d6336c';
 const OK = THEME.success;
@@ -48,7 +48,7 @@ const STROKE = THEME.planItemStroke;
 const DIM = THEME.planDim;
 /** Snap marker colour and the word shown next to it. */
 const SNAP_STYLE: Record<SnapKind, [string, string]> = {
-  corner: ['#7c4dde', 'corner'], wall: ['#7c4dde', 'on wall'], align: [GUIDE, 'aligned'], ink: ['#c2410c', 'plan wall'], angle: [ACCENT, ''],
+  corner: ['#7c4dde', 'corner'], wall: ['#7c4dde', 'on wall'], align: [GUIDE, 'aligned'], ink: ['#c2410c', 'plan wall'], angle: [ACCENT, 'straight'],
 };
 /** Screen px: click this close to the first corner to close the outline (also the size of its target ring). */
 const CLOSE_PX = 14;
@@ -80,7 +80,7 @@ const symbolParts = (def: ItemDef): ModelPart[] => {
 
 type Gesture =
   | { kind: 'pan'; sx: number; sy: number; view: View }
-  | { kind: 'draw'; sx: number; sy: number; view: View; raw: Vec2; shift: boolean }
+  | { kind: 'draw'; sx: number; sy: number; view: View; raw: Vec2; free: boolean }
   | { kind: 'item'; id: string; dx: number; dy: number; batched: boolean }
   | { kind: 'rotate'; id: string; batched: boolean }
   | { kind: 'opening'; id: string; batched: boolean }
@@ -109,7 +109,7 @@ function Label({ at, k, children, size = 12, fill = INK, weight = 500, bg, angle
 
 /** Small coloured marker (+ word) where a snap landed, plus its dashed alignment guides. */
 function SnapMarker({ hit, k }: { hit: SnapHit; k: number }) {
-  if (!hit.kind || hit.kind === 'angle') return null;
+  if (!hit.kind) return null;
   const [color, word] = SNAP_STYLE[hit.kind];
   const s = 5 / k;
   return (
@@ -132,7 +132,19 @@ function OpeningSymbol({ o, room, k, selected, floor }: { o: Opening; room: Room
   const sw = (selected ? 2 : 1) / k;
   const gap = [g.a, g.b, add(g.b, out, t), add(g.a, out, t)];
   let body: ReactNode;
-  if (o.kind === 'door') {
+  if (o.kind === 'open') {
+    // No wall at all: the floor runs through, with thin end ticks and a dashed line where the wall face would be.
+    const ta = add(g.a, out, t), tb = add(g.b, out, t);
+    const lw = (selected ? 2 : 1.25) / k;
+    body = (
+      <g data-open-gap="">
+        <polygon points={pts(gap)} fill={floor} stroke="none" />
+        <line x1={g.a.x} y1={g.a.y} x2={ta.x} y2={ta.y} stroke={stroke} strokeWidth={lw} />
+        <line x1={g.b.x} y1={g.b.y} x2={tb.x} y2={tb.y} stroke={stroke} strokeWidth={lw} />
+        <line x1={g.a.x} y1={g.a.y} x2={g.b.x} y2={g.b.y} stroke={stroke} strokeOpacity={selected ? 1 : 0.45} strokeWidth={lw} strokeDasharray={`${4 / k} ${4 / k}`} />
+      </g>
+    );
+  } else if (o.kind === 'door') {
     const swing = o.swing ?? { hinge: 'start', side: 'in' };
     const hinge = swing.hinge === 'start' ? g.a : g.b;
     const other = swing.hinge === 'start' ? g.b : g.a;
@@ -210,7 +222,8 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
   const space = useRef(false);
   const [guides, setGuides] = useState<Guide[]>([]);
   const [dragItem, setDragItem] = useState<string | null>(null);
-  const [cursor, setCursor] = useState<{ p: Vec2; shift: boolean } | null>(null);
+  /** `free`: snapping suspended for this point (Alt or Shift held, or snapping toggled off). */
+  const [cursor, setCursor] = useState<{ p: Vec2; free: boolean } | null>(null);
   const [drawPts, setDrawPts] = useState<Vec2[]>([]);
   const [hoverItem, setHoverItem] = useState<string | null>(null);
   const [cornerSnap, setCornerSnap] = useState<SnapHit | null>(null);
@@ -273,6 +286,20 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
     return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
   }, []);
 
+  // ── Alt = no snapping while held. Swallow the bare Alt press so Windows/Firefox don't move focus to the menu bar. ──
+  const noSnap = (e: { altKey: boolean; shiftKey: boolean }) => e.altKey || e.shiftKey || !useStore.getState().ui.snap;
+  useEffect(() => {
+    if (readOnly) return;
+    const onAlt = (e: KeyboardEvent) => {
+      if (e.key !== 'Alt' || (e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))) return;
+      e.preventDefault();
+      setCursor((c) => c && { ...c, free: noSnap(e) });
+    };
+    window.addEventListener('keydown', onAlt);
+    window.addEventListener('keyup', onAlt);
+    return () => { window.removeEventListener('keydown', onAlt); window.removeEventListener('keyup', onAlt); };
+  }, [readOnly]);
+
   // ── draw-room tool ──
   const finishDraw = (points: Vec2[]) => {
     if (points.length < 3) return;
@@ -295,13 +322,13 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }); // re-bound each render so it sees the latest points
-  const drawSnap = (raw: Vec2, shift: boolean): SnapHit => (shift ? { p: raw, kind: null, guides: [] } : snapPoint({
-    raw, prev: drawPts[drawPts.length - 1], align: drawPts.slice(0, -1), rooms: rooms.map((r) => r.points), ink: inkSnap, threshold: 10 / k,
-  }));
+  const drawSnap = (raw: Vec2, free: boolean): SnapHit => snapPoint({
+    raw, prev: drawPts[drawPts.length - 1], align: drawPts.slice(0, -1), rooms: rooms.map((r) => r.points), ink: inkSnap, pxPerCm: k, free,
+  });
   const closes = (raw: Vec2) => drawPts.length >= 3 && dist(raw, drawPts[0]) * k < CLOSE_PX;
-  const addDrawPoint = (raw: Vec2, shift: boolean) => {
+  const addDrawPoint = (raw: Vec2, free: boolean) => {
     if (closes(raw)) { finishDraw(drawPts); return; }
-    const { p } = drawSnap(raw, shift);
+    const { p } = drawSnap(raw, free);
     if (drawPts.length && dist(p, drawPts[drawPts.length - 1]) < 1e-9) return; // 2nd click of a double-click
     setDrawPts([...drawPts, p]);
   };
@@ -318,7 +345,9 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
     const { r, hit } = best;
     const d = openingDefaults(ui.openingKind);
     const a = r.points[hit.wall], b = r.points[(hit.wall + 1) % r.points.length];
-    return { room: r, o: { kind: ui.openingKind, wall: hit.wall, offset: clampOffset(hit.offset, d.width, dist(a, b)), ...d } };
+    const width = ui.openingKind === 'open' ? Math.min(d.width, dist(a, b)) : d.width;
+    const o = { kind: ui.openingKind, wall: hit.wall, ...d, width, offset: clampOffset(hit.offset, width, dist(a, b)) };
+    return openingsClash(r.openings, o) ? null : { room: r, o };
   };
 
   // ── pointer handling ──
@@ -337,7 +366,7 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
     const st = useStore.getState();
     if (tool === 'calibrate') return;
     // A click adds the corner on release; a press that moves becomes a pan, so panning mid-draw never adds a stray corner.
-    if (tool === 'draw-room') { gesture.current = { kind: 'draw', sx: e.clientX, sy: e.clientY, view: viewRef.current, raw: p, shift: e.shiftKey }; return; }
+    if (tool === 'draw-room') { gesture.current = { kind: 'draw', sx: e.clientX, sy: e.clientY, view: viewRef.current, raw: p, free: noSnap(e) }; return; }
     if (tool === 'place-opening') {
       const hit = openingAt(p);
       if (hit) {
@@ -385,7 +414,7 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
 
   const onPointerMove = (e: RPointerEvent<SVGSVGElement>) => {
     const p = toPlan(e);
-    if (tool === 'draw-room' || tool === 'place-opening') setCursor({ p, shift: e.shiftKey });
+    if (tool === 'draw-room' || tool === 'place-opening') setCursor({ p, free: noSnap(e) });
     let g = gesture.current;
     if (!g) return;
     if (g.kind === 'draw') {
@@ -426,13 +455,14 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
       startBatch(g);
       const hit = projectOnWalls(room.points, p);
       const a = room.points[hit.wall], b = room.points[(hit.wall + 1) % room.points.length];
-      st.updateOpening(g.id, { wall: hit.wall, offset: clampOffset(hit.offset, o.width, dist(a, b)) });
+      const next = { wall: hit.wall, offset: clampOffset(hit.offset, o.width, dist(a, b)) };
+      if (!openingsClash(room.openings, { ...o, ...next })) st.updateOpening(g.id, next);
     } else if (g.kind === 'corner') {
-      const hit = e.shiftKey ? null : snapPoint({
-        raw: p, align: room.points.filter((_, i) => i !== g.index), rooms: others.map((r) => r.points), ink: inkSnap, threshold: 8 / k,
+      const hit = snapPoint({
+        raw: p, align: room.points.filter((_, i) => i !== g.index), rooms: others.map((r) => r.points), ink: inkSnap, pxPerCm: k, free: noSnap(e),
       });
-      const np = hit?.p ?? p;
-      setCornerSnap(hit);
+      const np = hit.p;
+      setCornerSnap(hit.kind ? hit : null);
       startBatch(g);
       st.updateRoom(room.id, { points: room.points.map((q, i) => (i === g.index ? np : q)) });
     }
@@ -441,7 +471,7 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
   const onPointerUp = () => {
     const g = gesture.current;
     gesture.current = null;
-    if (g?.kind === 'draw') addDrawPoint(g.raw, g.shift);
+    if (g?.kind === 'draw') addDrawPoint(g.raw, g.free);
     else if (g && g.kind !== 'pan' && g.batched) useStore.getState().endBatch();
     setCornerSnap(null);
     setGuides([]);
@@ -608,12 +638,23 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
   // Draw-room overlay
   const last = drawPts[drawPts.length - 1];
   const closing = tool === 'draw-room' && !!cursor && closes(cursor.p);
-  const live = tool === 'draw-room' && cursor && !closing ? drawSnap(cursor.p, cursor.shift) : null;
+  const live = tool === 'draw-room' && cursor && !closing ? drawSnap(cursor.p, cursor.free) : null;
   const end = closing ? drawPts[0] : live?.p ?? null;
   const outline = end ? [...drawPts, end] : drawPts;
   const drawMeasure = last && end
     ? `${formatLength(dist(last, end), units)}${outline.length >= 3 ? ` · area ${formatArea(polygonArea(outline), units)}` : ''}`
     : null;
+  // Right-angle marks on every square corner of the outline being drawn, and the live angle at the corner being worked from.
+  const corners: { a: Vec2; c: Vec2; b: Vec2 }[] = [];
+  for (let i = 1; i < outline.length - 1; i++) corners.push({ a: outline[i - 1], c: outline[i], b: outline[i + 1] });
+  if (closing && drawPts.length >= 3) corners.push({ a: drawPts[drawPts.length - 1], c: drawPts[0], b: drawPts[1] });
+  const liveAngle = last && end && drawPts.length >= 2 ? cornerAngle(drawPts[drawPts.length - 2], last, end) : null;
+  const rightMark = ({ a, c, b }: { a: Vec2; c: Vec2; b: Vec2 }, key: number) => {
+    if (!isRightAngle(cornerAngle(a, c, b))) return null;
+    const s = 12 / k, u = norm(a, c), v = norm(b, c);
+    const p1 = { x: c.x + u.x * s, y: c.y + u.y * s }, p3 = { x: c.x + v.x * s, y: c.y + v.y * s };
+    return <polyline key={key} data-testid="draw-right-angle" points={pts([p1, { x: p1.x + v.x * s, y: p1.y + v.y * s }, p3])} fill="none" stroke={OK} strokeWidth={1.5 / k} />;
+  };
   const drawOverlay = () => {
     if (tool !== 'draw-room') return null;
     return (
@@ -633,6 +674,16 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
         {drawPts.map((p, i) => (
           <circle key={i} cx={p.x} cy={p.y} r={(i === 0 ? 6 : 4) / k} fill="#ffffff" stroke={i === 0 && drawPts.length >= 3 ? OK : ACCENT} strokeWidth={2 / k} />
         ))}
+        {corners.map(rightMark)}
+        {liveAngle !== null && !closing && (() => {
+          const square = isRightAngle(liveAngle);
+          const out = norm({ x: 2 * last.x - (drawPts[drawPts.length - 2].x + end!.x) / 2, y: 2 * last.y - (drawPts[drawPts.length - 2].y + end!.y) / 2 }, last);
+          return (
+            <g data-testid="draw-angle" data-square={square ? 'true' : 'false'}>
+              <Label at={{ x: last.x + out.x * 22 / k, y: last.y + out.y * 22 / k }} k={k} fill={square ? OK : ACCENT} weight={600} bg="#ffffff">{`${Math.round(liveAngle)}°`}</Label>
+            </g>
+          );
+        })()}
         {live && <SnapMarker hit={live} k={k} />}
         {end && !closing && <circle cx={end.x} cy={end.y} r={3 / k} fill={ACCENT} />}
       </g>
@@ -675,7 +726,6 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
             {room && renderWalls(room, true)}
             {others.map((r) => <g key={r.id} data-chrome="" opacity={0.75}>{roomLabel(r)}</g>)}
             {room && roomLabel(room)}
-            <ProposalLayer />
             {room?.openings.map((o) => (
               <g key={o.id} data-testid="plan-opening" data-opening-id={o.id} style={editable ? { cursor: 'pointer' } : undefined}>
                 <OpeningSymbol o={o} room={room} k={k} floor={floor} selected={sel?.type === 'opening' && sel.id === o.id} />
@@ -748,7 +798,7 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
       </svg>
       {tool === 'draw-room' && !readOnly && (
         <>
-          <DrawHud count={drawPts.length} canFinish={drawPts.length >= 3} measure={drawMeasure}
+          <DrawHud count={drawPts.length} free={!!cursor?.free} canFinish={drawPts.length >= 3} measure={drawMeasure}
             onUndo={() => setDrawPts((p) => p.slice(0, -1))} onFinish={() => finishDraw(drawPts)} onCancel={cancelDraw} />
           {cursor && <Loupe center={end ?? cursor.p} k={k} view={view} pane={{ w: vw, h: vh }}>{loupeContent}</Loupe>}
         </>

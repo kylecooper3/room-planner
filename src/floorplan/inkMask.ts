@@ -3,9 +3,79 @@ import { useStore } from '../store/store';
 import { getBlob } from '../store/blobs';
 import type { InkSnap } from '../editor2d/drawSnap';
 import type { Underlay } from '../types';
-import { buildInkMask, type InkMask } from './detectWalls';
 
-export type { InkMask };
+/** Downsampled "wall ink" mask of a floor-plan image: 1 = thick dark ink, 0 = paper. */
+export interface InkMask { w: number; h: number; data: Uint8Array; /** image px per mask px */ scale: number }
+
+/**
+ * Dark ink (at or below the Otsu threshold, capped so mid-grey floor textures stay paper), minus strokes thinner than
+ * 3 px (furniture outlines, text, door arcs, hatching): a morphological opening with a 3×3 square. Blank / no-contrast
+ * images give an empty mask.
+ */
+export function buildInkMask({ data, width: w, height: h }: ImageData, scale = 1): InkMask {
+  const n = w * h;
+  const gray = new Uint8Array(n);
+  const hist = new Float64Array(256);
+  let lo = 255, hi = 0;
+  for (let i = 0; i < n; i++) {
+    const a = data[i * 4 + 3] / 255;
+    const g = Math.round((0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2]) * a + 255 * (1 - a));
+    gray[i] = g;
+    hist[g]++;
+    if (g < lo) lo = g;
+    if (g > hi) hi = g;
+  }
+  const out = new Uint8Array(n);
+  if (hi - lo < 32) return { w, h, data: out, scale };
+  const t = Math.min(otsu(hist, n), 140);
+  const dark = new Uint8Array(n);
+  for (let i = 0; i < n; i++) dark[i] = gray[i] <= t ? 1 : 0;
+  const ero = boxCount(dark, w, h, 1);
+  const core = new Uint8Array(n);
+  for (let i = 0; i < n; i++) core[i] = ero[i] === 9 ? 1 : 0;
+  const dil = boxCount(core, w, h, 1);
+  for (let i = 0; i < n; i++) out[i] = dark[i] && dil[i] > 0 ? 1 : 0;
+  return { w, h, data: out, scale };
+}
+
+export function otsu(hist: Float64Array, n: number): number {
+  let sumAll = 0;
+  for (let i = 0; i < 256; i++) sumAll += i * hist[i];
+  let wB = 0, sumB = 0, bestVar = -1, t = 127;
+  for (let i = 0; i < 256; i++) {
+    wB += hist[i];
+    if (wB === 0) continue;
+    const wF = n - wB;
+    if (wF === 0) break;
+    sumB += i * hist[i];
+    const mB = sumB / wB, mF = (sumAll - sumB) / wF;
+    const v = wB * wF * (mB - mF) * (mB - mF);
+    if (v > bestVar) { bestVar = v; t = i; }
+  }
+  return t;
+}
+
+/** Box-window sum over a binary image via an integral image (out-of-bounds counts as 0). */
+export function boxCount(src: Uint8Array, w: number, h: number, r: number): Int32Array {
+  const W = w + 1;
+  const ii = new Int32Array(W * (h + 1));
+  for (let y = 0; y < h; y++) {
+    let row = 0;
+    for (let x = 0; x < w; x++) {
+      row += src[y * w + x];
+      ii[(y + 1) * W + x + 1] = ii[y * W + x + 1] + row;
+    }
+  }
+  const out = new Int32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    const y0 = Math.max(0, y - r), y1 = Math.min(h, y + r + 1);
+    for (let x = 0; x < w; x++) {
+      const x0 = Math.max(0, x - r), x1 = Math.min(w, x + r + 1);
+      out[y * w + x] = ii[y1 * W + x1] - ii[y0 * W + x1] - ii[y1 * W + x0] + ii[y0 * W + x0];
+    }
+  }
+  return out;
+}
 
 /** Decodes the stored image, scaled so its longer side is at most maxSide px. */
 export async function loadImageData(imageId: string, maxSide: number): Promise<{ image: ImageData; scale: number } | null> {

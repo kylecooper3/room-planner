@@ -72,8 +72,8 @@ export function buildWalls(room: Pick<Room, 'points' | 'openings' | 'wallThickne
     const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy) || 1;
     const openings = room.openings.filter((o) => o.wall === i);
     const holes = openings
-      .filter((o) => o.kind === 'door' || o.kind === 'window')
-      .map((o) => ({ start: o.offset - o.width / 2, end: o.offset + o.width / 2, bottom: o.sill, top: o.sill + o.height }));
+      .filter((o) => o.kind === 'door' || o.kind === 'window' || o.kind === 'open')
+      .map((o) => ({ start: o.offset - o.width / 2, end: o.offset + o.width / 2, bottom: o.kind === 'open' ? 0 : o.sill, top: o.kind === 'open' ? room.ceilingHeight : o.sill + o.height }));
     const u = { x: dx / length, y: dy / length }, out = { x: (dy / length) * side, y: (-dx / length) * side };
     // shortcut: passages are cut only within [0, length]; corner extensions next to a door are not cut.
     for (const p of passages) {

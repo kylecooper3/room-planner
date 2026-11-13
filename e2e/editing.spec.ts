@@ -220,3 +220,22 @@ test('dialogs close; wall colour drag is one undo step; Esc leaves tools', async
   await page.keyboard.press('Escape');
   expect((await state(page)).ui.tool).toBe('select');
 });
+
+test('draw tool: the live corner angle shows, and square corners get a right-angle mark', async ({ page }) => {
+  await open(page);
+  await page.getByTestId('start-draw').click();
+  await clickPlan(page, 0, 0);
+  await clickPlan(page, 400, 0);
+  const hover = async (x: number, y: number) => { const s = await planToScreen(page, { x, y }); await page.mouse.move(s.x, s.y); };
+  await hover(300, 300); // well off square: ~56°, no mark
+  await expect(page.getByTestId('draw-angle')).toHaveAttribute('data-square', 'false');
+  await expect(page.getByTestId('draw-right-angle')).toHaveCount(0);
+  await hover(402, 300); // within the straightening snap: exactly 90°
+  await expect(page.getByTestId('draw-angle')).toHaveAttribute('data-square', 'true');
+  await expect(page.getByTestId('draw-angle')).toContainText('90°');
+  await expect(page.getByTestId('draw-right-angle')).toHaveCount(1);
+  await clickPlan(page, 402, 300);
+  await hover(3, 302); // the next corner is square too: both marks show
+  await expect(page.getByTestId('draw-right-angle')).toHaveCount(2);
+  await page.screenshot({ path: 'test-results/right-angle.png' });
+});

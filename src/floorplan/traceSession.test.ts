@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CM_PER_FOOT, type Room, type Underlay } from '../types';
-import { buildInkMask } from './detectWalls';
-import { inkBoundary, makeInkSnap } from './inkMask';
+import { buildInkMask, inkBoundary, makeInkSnap } from './inkMask';
 import { countsTowardArea, derivedStep, isCalibrated, parseArea, scaleToArea, scaleWords } from './traceSession';
 import { emptyProject } from '../store/store';
 

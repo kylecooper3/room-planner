@@ -140,3 +140,87 @@ test('2D shows every room; clicking a dimmed room activates it; doors go on any 
   expect(s2.project.activeRoomId).toBe(second.id);
   expect(s2.project.rooms.find((r) => r.id === second.id)!.openings).toHaveLength(1);
 });
+
+test('open gaps: place an opening like a door, then open and close a whole wall', async ({ page }) => {
+  await roomByDimensions(page, '10', '12');
+  await page.getByTestId('tool-open').click();
+  await clickPlan(page, 150, -6); // on wall 0 (y = 0, wall drawn outside the room)
+  let r = await activeRoom(page);
+  expect(r.openings).toEqual([expect.objectContaining({ kind: 'open', wall: 0, width: 90 })]);
+  expect((await state(page)).ui.selection).toEqual({ type: 'opening', id: r.openings[0].id });
+  await expect(page.locator('[data-testid=plan-opening] [data-open-gap]')).toHaveCount(1);
+  await expect(page.locator('.app-inspector h2')).toHaveText('Opening');
+  await expect(page.getByTestId('opening-height')).toHaveCount(0); // always floor to ceiling
+  // A second gap overlapping the first is refused.
+  await page.getByTestId('tool-open').click();
+  await clickPlan(page, 170, -6);
+  expect((await activeRoom(page)).openings).toHaveLength(1);
+  await page.keyboard.press('Escape');
+
+  await page.locator('[data-testid=plan-wall][data-wall="1"] polygon').first().click();
+  await expect(page.getByTestId('wall-open-toggle')).toHaveText(/Open this wall/);
+  await page.getByTestId('wall-open-toggle').click();
+  r = await activeRoom(page);
+  const len = Math.hypot(r.points[2].x - r.points[1].x, r.points[2].y - r.points[1].y);
+  const full = r.openings.find((o) => o.wall === 1)!;
+  expect(full).toMatchObject({ kind: 'open' });
+  expect(full.width).toBeCloseTo(len, 6);
+  expect(full.offset).toBeCloseTo(len / 2, 6);
+  await expect(page.locator('[data-testid=plan-opening] [data-open-gap]')).toHaveCount(2);
+  await expect(page.getByTestId('wall-open-toggle')).toHaveText(/Close this wall/);
+  await page.getByTestId('wall-open-toggle').click();
+  expect((await activeRoom(page)).openings.filter((o) => o.wall === 1)).toHaveLength(0);
+  await page.keyboard.press('Control+z');
+  expect((await activeRoom(page)).openings.filter((o) => o.wall === 1)).toHaveLength(1);
+});
+
+test('tracing: a traced room can be renamed from the panel after the naming prompt is gone (one undo step)', async ({ page }) => {
+  const { traceRoom, rectCorners } = await import('./fixtures');
+  await uploadPlan(page, floorPlanPng());
+  await page.getByTestId('floorplan-skip-scale').click();
+  await traceRoom(page, rectCorners(PLAN.inner));
+  await page.getByTestId('floorplan-done-tracing').click(); // dismisses the prompt without naming
+  await expect(page.getByTestId('floorplan-naming')).toHaveCount(0);
+  await page.getByTestId('floorplan-step-3').getByRole('button').first().click();
+  const row = page.getByTestId('floorplan-room-row');
+  await row.hover();
+  await row.getByTestId('floorplan-room-rename').click();
+  await row.getByRole('textbox', { name: 'Room name' }).fill('Bedroom');
+  await row.getByRole('textbox', { name: 'Room name' }).press('Enter');
+  await expect(row).toContainText('Bedroom');
+  const r = await activeRoom(page);
+  expect(r.name).toBe('Bedroom');
+  await expect(page.locator(`[data-testid=room-row][data-room-id="${r.id}"]`)).toContainText('Bedroom');
+  await expect(page.locator(`[data-testid=plan-room-label][data-room-id="${r.id}"]`)).toContainText('Bedroom');
+  // Double-click the name; Esc cancels.
+  await row.locator('.app-room-main').dblclick();
+  await row.getByRole('textbox', { name: 'Room name' }).fill('Nope');
+  await row.getByRole('textbox', { name: 'Room name' }).press('Escape');
+  await expect(row).toContainText('Bedroom');
+  await page.keyboard.press('Control+z');
+  expect((await activeRoom(page)).name).toBe('Room 1');
+});
+
+test('draw tool: holding Alt turns snapping off; the point follows the mouse', async ({ page }) => {
+  await open(page);
+  await page.getByTestId('start-draw').click();
+  for (const [x, y] of [[0, 0], [300, 0], [300, 300], [0, 300]]) await clickPlan(page, x, y);
+  await page.keyboard.press('Enter');
+  await zoomOut(page);
+  await page.getByTestId('tool-draw-room').click();
+  const near = await planToScreen(page, { x: 300, y: 0 });
+  await page.mouse.move(near.x + 3, near.y - 2);
+  await expect(page.getByTestId('snap-marker')).toHaveAttribute('data-kind', 'corner');
+  await page.keyboard.down('Alt');
+  await expect(page.getByTestId('snap-marker')).toHaveCount(0);
+  await expect(page.getByTestId('draw-snap-off')).toBeVisible();
+  await page.mouse.click(near.x + 3, near.y - 2);
+  await page.keyboard.up('Alt');
+  const k = Number(await page.getByTestId('plan-svg').getAttribute('data-px-per-cm'));
+  await clickPlan(page, 500, 200);
+  await clickPlan(page, 300, 200);
+  await page.keyboard.press('Enter');
+  const b = await activeRoom(page);
+  expect(b.points[0].x).not.toBe(300); // landed where clicked, not on the corner
+  expect(Math.abs(b.points[0].x - (300 + 3 / k))).toBeLessThan(1 / k);
+});

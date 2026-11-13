@@ -17,7 +17,7 @@ const str = (v: unknown): v is string => typeof v === 'string';
 const arr = (v: unknown, f: (x: unknown) => boolean): v is unknown[] => Array.isArray(v) && v.every(f);
 const oneOf = <T extends string>(v: unknown, xs: readonly T[]): v is T => xs.includes(v as T);
 const isVec = (v: unknown) => isObj(v) && num(v.x) && num(v.y);
-const isOpening = (n: number) => (v: unknown) => isObj(v) && str(v.id) && oneOf(v.kind, ['door', 'window', 'outlet', 'radiator'] as const)
+const isOpening = (n: number) => (v: unknown) => isObj(v) && str(v.id) && oneOf(v.kind, ['door', 'window', 'outlet', 'radiator', 'open'] as const)
   && Number.isInteger(v.wall) && (v.wall as number) >= 0 && (v.wall as number) < n
   && num(v.offset) && pos(v.width) && num(v.height) && num(v.sill)
   && (v.swing === undefined || (isObj(v.swing) && oneOf(v.swing.hinge, ['start', 'end'] as const) && oneOf(v.swing.side, ['in', 'out'] as const)));
