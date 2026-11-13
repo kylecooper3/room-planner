@@ -86,7 +86,7 @@ export function LibraryPanel() {
   const hasRoom = useStore((st) => st.project.rooms.length > 0);
   const noRoomHint = hasRoom ? undefined : 'Add a room first';
   const groups = groupPresets(query);
-  const fixtures = FIXTURES.filter(([, , label, hint]) => matches(query, `${label} ${hint}`));
+  const fixtures = FIXTURES.filter(([, , label]) => matches(query, label));
 
   return (
     <aside className="app-library" aria-label="Library">
@@ -159,11 +159,11 @@ export function LibraryPanel() {
 }
 
 /** Things built into the walls rather than furniture: picked here, then placed by clicking a wall. */
-const FIXTURES: [OpeningKind, ReactNode, string, string][] = [
-  ['door', <DoorOpen size={16} />, 'Door', 'swing, opens into the room'],
-  ['window', <AppWindow size={16} />, 'Window', 'glass, any width'],
-  ['outlet', <Plug size={16} />, 'Outlet', 'power socket'],
-  ['radiator', <Heater size={16} />, 'Radiator', 'heater on the wall'],
+const FIXTURES: [OpeningKind, ReactNode, string][] = [
+  ['door', <DoorOpen size={16} />, 'Door'],
+  ['window', <AppWindow size={16} />, 'Window'],
+  ['outlet', <Plug size={16} />, 'Outlet'],
+  ['radiator', <Heater size={16} />, 'Radiator'],
 ];
 const matches = (query: string, text: string) => text.toLowerCase().includes(query.trim().toLowerCase());
 
@@ -175,7 +175,7 @@ function FixturesSection({ items, hasRoom }: { items: typeof FIXTURES; hasRoom: 
       <button className="app-lib-cat app-lib-toggle" aria-expanded={open} data-testid="fixtures-toggle" onClick={() => setOpen(!open)}>
         <ChevronDown size={13} className="app-chevron" aria-hidden /> Doors, windows &amp; fixtures
       </button>
-      {open && items.map(([kind, icon, label, hint]) => {
+      {open && items.map(([kind, icon, label]) => {
         const active = ui.tool === 'place-opening' && ui.openingKind === kind;
         return (
           <button
@@ -185,7 +185,7 @@ function FixturesSection({ items, hasRoom }: { items: typeof FIXTURES; hasRoom: 
           >
             <span className="app-lib-icon" aria-hidden>{icon}</span>
             <span className="app-lib-name">{label}</span>
-            {active ? <span className="app-lib-size app-lib-now">Click a wall</span> : <span className="app-lib-size">{hint}</span>}
+            {active && <span className="app-lib-size app-lib-now">Click a wall</span>}
             <span className="app-lib-add" aria-hidden><Plus size={15} /></span>
           </button>
         );
