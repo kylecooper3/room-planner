@@ -11,6 +11,9 @@ vi.mock('../view3d/exportPng', () => ({ exportView3dPng: vi.fn() }));
 
 const { App } = await import('./App');
 const { useStore } = await import('../store/store');
+const { useFloorPlans } = await import('../store/floorPlans');
+const PLAN = { id: 'p1', name: 'Home', createdAt: 0, updatedAt: Date.now(), roomCount: 0, areaCm2: 0, thumbnailSvg: '' };
+useFloorPlans.setState({ ready: true, activeId: 'p1', plans: [PLAN] });
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let container: HTMLDivElement;
@@ -28,6 +31,20 @@ test('shows the splash until hydrated', async () => {
   useStore.setState({ hydrated: false });
   await render();
   expect(q('splash')).not.toBeNull();
+});
+
+test('no open plan shows the floor-plan library; first launch shows the empty state', async () => {
+  useStore.setState({ hydrated: true });
+  useFloorPlans.setState({ activeId: null, plans: [] });
+  await render();
+  for (const id of ['home', 'home-empty', 'home-demo', 'home-start-dimensions', 'home-import']) expect(q(id), id).not.toBeNull();
+  expect(q('app')).toBeNull();
+  container.remove();
+  useFloorPlans.setState({ plans: [PLAN, { ...PLAN, id: 'p2', name: 'Flat', roomCount: 3, areaCm2: 500000 }] });
+  await render();
+  expect(container.querySelectorAll('[data-testid=plan-card]').length).toBe(2);
+  expect(container.textContent).toContain('3 rooms');
+  useFloorPlans.setState({ activeId: 'p1', plans: [PLAN] });
 });
 
 test('welcome state offers the three starts and the demo', async () => {

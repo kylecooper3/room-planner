@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as RMouseEvent, PointerEvent as RPointerEvent, ReactNode } from 'react';
 import { isFlat } from '../types';
-import type { Guide, Issue, ItemDef, Opening, PlacedItem, Room, Vec2 } from '../types';
+import type { Guide, Issue, ItemDef, ModelPart, Opening, PlacedItem, Room, Vec2 } from '../types';
+import { THEME } from '../theme';
+import { generateModel } from '../models/generate';
 import { useStore } from '../store/store';
 import { useActiveRoom, useGetDef, useIssues, useLayout } from '../store/selectors';
 import {
-  clearancePolygon, distancesToWalls, doorSwingPolygon, getOpeningGeometry, polygonArea, polygonCentroid, projectOnWalls,
+  clearancePolygon, clipToConvex, distancesToWalls, doorSwingPolygon, getOpeningGeometry, polygonArea, polygonCentroid, projectOnWalls,
   snapItem,
 } from '../core/geometry';
 import { formatArea, formatLength } from '../core/units';
@@ -26,6 +28,7 @@ import {
 } from './view';
 import type { View } from './view';
 import './pe-plan.css';
+import { Maximize, ZoomIn, ZoomOut } from 'lucide-react';
 
 export interface PlanEditorProps {
   /** Layout of the active room to show; defaults to the active layout. */
@@ -34,23 +37,46 @@ export interface PlanEditorProps {
   readOnly?: boolean;
 }
 
-const INK = '#3a2f2a';
-const WALL = '#5c4a40';
-const ACCENT = '#f08a4b';
-const DANGER = '#e5484d';
-const GUIDE = '#2f9be0';
-const OK = '#3a9d6b';
-const MUTED = '#8c7f76';
+const INK = THEME.planLabel;
+const WALL = THEME.planWall;
+const ACCENT = THEME.accent;
+const DANGER = THEME.danger;
+const GUIDE = '#d6336c';
+const OK = THEME.success;
+const MUTED = THEME.text3;
+const STROKE = THEME.planItemStroke;
+const DIM = THEME.planDim;
 /** Snap marker colour and the word shown next to it. */
 const SNAP_STYLE: Record<SnapKind, [string, string]> = {
-  corner: ['#8b5cf6', 'corner'], wall: ['#8b5cf6', 'on wall'], align: [GUIDE, 'aligned'], ink: ['#d6336c', 'plan wall'], angle: [ACCENT, ''],
+  corner: ['#7c4dde', 'corner'], wall: ['#7c4dde', 'on wall'], align: [GUIDE, 'aligned'], ink: ['#c2410c', 'plan wall'], angle: [ACCENT, ''],
 };
 /** Screen px: click this close to the first corner to close the outline (also the size of its target ring). */
 const CLOSE_PX = 14;
 /** Screen px a left press may travel before it becomes a pan instead of a click (draw tool). */
 const CLICK_SLOP = 4;
-const FONT = "ui-rounded, 'Nunito', 'Segoe UI', system-ui, sans-serif";
-const FLOOR_FILL: Record<Room['floor'], string> = { wood: '#f4e4c8', carpet: '#ece5da', tile: '#eef0ee' };
+const FONT = "'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif";
+/** Near-white floor fills with only a hint of the finish. */
+const FLOOR_FILL: Record<Room['floor'], string> = { wood: '#fbf8f3', carpet: '#f9f8f6', tile: THEME.planFloor };
+
+const hex = (c: string) => { const n = parseInt(c.slice(1, 7), 16); return Number.isFinite(n) ? [n >> 16, (n >> 8) & 255, n & 255] : [180, 180, 180]; };
+/** a + (b - a) * t for '#rrggbb' colours. */
+const mix = (a: string, b: string, t: number) => {
+  const x = hex(a), y = hex(b);
+  return `#${x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, '0')).join('')}`;
+};
+/** Top-down plan symbol of an item: its generated 3D parts, drawn low to high. Cached per (immutable) def. */
+const symbolCache = new WeakMap<ItemDef, ModelPart[]>();
+const symbolParts = (def: ItemDef): ModelPart[] => {
+  let parts = symbolCache.get(def);
+  if (!parts) {
+    const { w, d } = def.size, min = Math.min(w, d) * 0.04;
+    parts = def.model.kind !== 'parametric' ? [] : generateModel(def.model, def.size)
+      .filter((p) => p.size[0] > min && p.size[2] > min && !(Math.abs(p.size[0] - w) < 0.5 && Math.abs(p.size[2] - d) < 0.5 && p.shape === 'box'))
+      .sort((a, b) => a.position[1] + a.size[1] / 2 - (b.position[1] + b.size[1] / 2));
+    symbolCache.set(def, parts);
+  }
+  return parts;
+};
 
 type Gesture =
   | { kind: 'pan'; sx: number; sy: number; view: View }
@@ -63,11 +89,21 @@ type Gesture =
 const pts = (poly: Vec2[]) => poly.map((p) => `${p.x},${p.y}`).join(' ');
 const add = (a: Vec2, b: Vec2, s = 1): Vec2 => ({ x: a.x + b.x * s, y: a.y + b.y * s });
 
-/** Text with a white halo, constant screen size. */
-function Label({ at, k, children, size = 12, fill = INK }: { at: Vec2; k: number; children: ReactNode; size?: number; fill?: string }) {
+/** Text at a constant screen size. `bg` draws a soft rounded plate behind it (for labels over busy drawing). */
+function Label({ at, k, children, size = 12, fill = INK, weight = 500, bg, angle = 0 }: {
+  at: Vec2; k: number; children: ReactNode; size?: number; fill?: string; weight?: number; bg?: string; angle?: number;
+}) {
+  const text = (
+    <text x={at.x} y={at.y} fontSize={size / k} fontFamily={FONT} fontWeight={weight} fill={fill} textAnchor="middle"
+      dominantBaseline="central" pointerEvents="none" transform={angle ? `rotate(${angle} ${at.x} ${at.y})` : undefined}>{children}</text>
+  );
+  if (!bg) return text;
+  const w = (String(children).length * size * 0.56 + 10) / k, h = (size + 6) / k;
   return (
-    <text x={at.x} y={at.y} fontSize={size / k} fontFamily={FONT} fontWeight={600} fill={fill} textAnchor="middle"
-      dominantBaseline="middle" stroke="#ffffff" strokeWidth={3 / k} paintOrder="stroke" pointerEvents="none">{children}</text>
+    <g pointerEvents="none">
+      <rect x={at.x - w / 2} y={at.y - h / 2} width={w} height={h} rx={h / 2} fill={bg} fillOpacity={0.88} />
+      {text}
+    </g>
   );
 }
 
@@ -83,8 +119,7 @@ function SnapMarker({ hit, k }: { hit: SnapHit; k: number }) {
       ))}
       <rect x={hit.p.x - s} y={hit.p.y - s} width={2 * s} height={2 * s} fill="none" stroke={color} strokeWidth={2 / k}
         transform={`rotate(45 ${hit.p.x} ${hit.p.y})`} />
-      <text x={hit.p.x + 9 / k} y={hit.p.y + 16 / k} fontSize={10 / k} fontFamily={FONT} fontWeight={700} fill={color}
-        stroke="#ffffff" strokeWidth={3 / k} paintOrder="stroke">{word}</text>
+      <Label at={{ x: hit.p.x + 24 / k, y: hit.p.y + 16 / k }} k={k} size={10} weight={600} fill={color} bg="#ffffff">{word}</Label>
     </g>
   );
 }
@@ -93,8 +128,8 @@ function OpeningSymbol({ o, room, k, selected, floor }: { o: Opening; room: Room
   const g = getOpeningGeometry(room.points, o);
   const t = room.wallThickness;
   const out = { x: -g.normalIn.x, y: -g.normalIn.y };
-  const stroke = selected ? ACCENT : INK;
-  const sw = (selected ? 2.5 : 1.5) / k;
+  const stroke = selected ? ACCENT : WALL;
+  const sw = (selected ? 2 : 1) / k;
   const gap = [g.a, g.b, add(g.b, out, t), add(g.a, out, t)];
   let body: ReactNode;
   if (o.kind === 'door') {
@@ -106,18 +141,18 @@ function OpeningSymbol({ o, room, k, selected, floor }: { o: Opening; room: Room
     body = (
       <>
         <polygon points={pts(gap)} fill={floor} stroke="none" />
-        <line x1={hinge.x} y1={hinge.y} x2={leafEnd.x} y2={leafEnd.y} stroke={stroke} strokeWidth={sw * 1.6} strokeLinecap="round" />
+        <line x1={hinge.x} y1={hinge.y} x2={leafEnd.x} y2={leafEnd.y} stroke={stroke} strokeWidth={sw * 2.2} strokeLinecap="butt" />
         <path d={`M ${leafEnd.x} ${leafEnd.y} A ${o.width} ${o.width} 0 0 ${cross > 0 ? 1 : 0} ${other.x} ${other.y}`}
-          fill="none" stroke={stroke} strokeWidth={sw} strokeDasharray={`${4 / k} ${3 / k}`} />
+          fill="none" stroke={stroke} strokeWidth={sw * 0.75} />
       </>
     );
   } else if (o.kind === 'window') {
     const l1a = add(g.a, out, t / 3), l1b = add(g.b, out, t / 3), l2a = add(g.a, out, (2 * t) / 3), l2b = add(g.b, out, (2 * t) / 3);
     body = (
       <>
-        <polygon points={pts(gap)} fill="#e3f3fb" stroke={stroke} strokeWidth={sw} />
-        <line x1={l1a.x} y1={l1a.y} x2={l1b.x} y2={l1b.y} stroke={stroke} strokeWidth={sw} />
-        <line x1={l2a.x} y1={l2a.y} x2={l2b.x} y2={l2b.y} stroke={stroke} strokeWidth={sw} />
+        <polygon points={pts(gap)} fill="#ffffff" stroke={stroke} strokeWidth={sw} />
+        <line x1={l1a.x} y1={l1a.y} x2={l1b.x} y2={l1b.y} stroke={stroke} strokeWidth={sw * 0.75} />
+        <line x1={l2a.x} y1={l2a.y} x2={l2b.x} y2={l2b.y} stroke={stroke} strokeWidth={sw * 0.75} />
       </>
     );
   } else if (o.kind === 'outlet') {
@@ -139,7 +174,7 @@ function OpeningSymbol({ o, room, k, selected, floor }: { o: Opening; room: Room
     }
     body = (
       <>
-        <polygon points={pts([g.a, g.b, add(g.b, g.normalIn, depth), add(g.a, g.normalIn, depth)])} fill="#e9e7e4" stroke={stroke} strokeWidth={sw} />
+        <polygon points={pts([g.a, g.b, add(g.b, g.normalIn, depth), add(g.a, g.normalIn, depth)])} fill="#f1f1ef" stroke={stroke} strokeWidth={sw} />
         {fins}
       </>
     );
@@ -445,11 +480,12 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
     const step = gridStep(units, k);
     const a = screenToPlan(view, 0, 0), b = screenToPlan(view, vw, vh);
     const lines: ReactNode[] = [];
+    const major = (v: number) => Math.round(v / step) % 5 === 0;
     for (let x = Math.floor(a.x / step) * step; x <= b.x; x += step)
-      lines.push(<line key={`x${x}`} x1={x} y1={a.y} x2={x} y2={b.y} />);
+      lines.push(<line key={`x${x}`} x1={x} y1={a.y} x2={x} y2={b.y} stroke={major(x) ? THEME.planGridMajor : THEME.planGrid} />);
     for (let y = Math.floor(a.y / step) * step; y <= b.y; y += step)
-      lines.push(<line key={`y${y}`} x1={a.x} y1={y} x2={b.x} y2={y} />);
-    return <g data-chrome="" stroke="#e6dccf" strokeWidth={1 / k}>{lines}</g>;
+      lines.push(<line key={`y${y}`} x1={a.x} y1={y} x2={b.x} y2={y} stroke={major(y) ? THEME.planGridMajor : THEME.planGrid} />);
+    return <g data-chrome="" strokeWidth={1 / k}>{lines}</g>;
   };
 
   const renderItem = ({ it, def }: { it: PlacedItem; def: ItemDef }) => {
@@ -457,31 +493,43 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
     const its = issuesFor(it.id);
     const bad = its.length > 0;
     const selected = sel?.type === 'item' && sel.id === it.id;
+    const base = bodyColor(def);
+    const flat = isFlat(def);
+    const line = bad ? DANGER : STROKE;
     return (
       <g key={it.id} data-testid="plan-item" data-item-id={it.id} data-issue={bad ? 'true' : 'false'}
         onPointerEnter={() => setHoverItem(it.id)} onPointerLeave={() => setHoverItem((h) => (h === it.id ? null : h))}>
         {bad && <title>{its.map((i) => i.message).join('\n')}</title>}
         <g transform={`translate(${it.x} ${it.y}) rotate(${it.rotation})`}>
-          <rect x={-w / 2} y={-d / 2} width={w} height={d} rx={Math.min(w, d) * 0.06} fill={bodyColor(def)}
-            fillOpacity={isFlat(def) ? 0.75 : 1} stroke={bad ? DANGER : INK} strokeWidth={(bad ? 2.5 : 1.25) / k} />
-          {bad && <rect x={-w / 2} y={-d / 2} width={w} height={d} fill={DANGER} fillOpacity={0.35} pointerEvents="none" />}
-          <line x1={-w / 2 + 2} y1={d / 2 - 1.5 / k} x2={w / 2 - 2} y2={d / 2 - 1.5 / k} stroke={bad ? DANGER : INK}
-            strokeWidth={3 / k} strokeLinecap="round" pointerEvents="none" />
+          <rect x={-w / 2} y={-d / 2} width={w} height={d} rx={Math.min(w, d) * 0.02} fill={mix(THEME.planItemFill, base, flat ? 0.3 : 0.22)}
+            fillOpacity={flat ? 0.45 : 1} stroke={line} strokeWidth={(bad ? 2 : 1) / k} strokeDasharray={flat ? `${6 / k} ${3 / k}` : undefined} />
+          {!flat && symbolParts(def).map((p, i) => {
+            const fill = mix('#ffffff', p.color ?? (def.model.kind === 'parametric' ? def.model.colors[p.role] : base), 0.16);
+            const [sx, , sz] = p.size, [px, , pz] = p.position;
+            return p.shape === 'box'
+              ? <rect key={i} x={px - sx / 2} y={pz - sz / 2} width={sx} height={sz} rx={Math.min(p.round ?? 0, sx / 2, sz / 2)} fill={fill}
+                stroke={line} strokeOpacity={0.55} strokeWidth={0.75 / k} pointerEvents="none" />
+              : <ellipse key={i} cx={px} cy={pz} rx={sx / 2} ry={sz / 2} fill={fill} stroke={line} strokeOpacity={0.55} strokeWidth={0.75 / k} pointerEvents="none" />;
+          })}
+          {bad && <rect x={-w / 2} y={-d / 2} width={w} height={d} fill={DANGER} fillOpacity={0.22} pointerEvents="none" />}
+          {!flat && (
+            <line x1={-w / 2} y1={d / 2} x2={w / 2} y2={d / 2} stroke={line} strokeWidth={2 / k} pointerEvents="none" />
+          )}
           {selected && (
             <g data-chrome="">
-              <rect x={-w / 2 - 4 / k} y={-d / 2 - 4 / k} width={w + 8 / k} height={d + 8 / k} fill="none" stroke={ACCENT}
-                strokeWidth={2 / k} strokeDasharray={`${6 / k} ${4 / k}`} pointerEvents="none" />
+              <rect x={-w / 2 - 3 / k} y={-d / 2 - 3 / k} width={w + 6 / k} height={d + 6 / k} rx={2 / k} fill="none" stroke={ACCENT}
+                strokeWidth={1.5 / k} pointerEvents="none" />
               {editable && (
                 <>
-                  <line x1={0} y1={-d / 2 - 4 / k} x2={0} y2={-d / 2 - 22 / k} stroke={ACCENT} strokeWidth={2 / k} pointerEvents="none" />
-                  <circle data-testid="rotate-handle" cx={0} cy={-d / 2 - 28 / k} r={7 / k} fill="#ffffff" stroke={ACCENT}
-                    strokeWidth={2.5 / k} style={{ cursor: 'grab' }} />
+                  <line x1={0} y1={-d / 2 - 3 / k} x2={0} y2={-d / 2 - 22 / k} stroke={ACCENT} strokeWidth={1.5 / k} pointerEvents="none" />
+                  <circle data-testid="rotate-handle" cx={0} cy={-d / 2 - 28 / k} r={6 / k} fill="#ffffff" stroke={ACCENT}
+                    strokeWidth={1.5 / k} style={{ cursor: 'grab' }} />
                 </>
               )}
             </g>
           )}
         </g>
-        <Label at={{ x: it.x, y: it.y }} k={k} size={11}>{def.name}</Label>
+        <Label at={{ x: it.x, y: it.y }} k={k} size={11} bg={THEME.surface}>{def.name}</Label>
       </g>
     );
   };
@@ -498,9 +546,9 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
     const x = p.it.x - bw / 2, y = p.it.y - reach - bh - 10 / k;
     return (
       <g data-testid="issue-callout" pointerEvents="none">
-        <rect x={x} y={y} width={bw} height={bh} rx={6 / k} fill="#fde2e3" stroke={DANGER} strokeWidth={1.5 / k} />
+        <rect x={x} y={y} width={bw} height={bh} rx={6 / k} fill="#fdecea" stroke={DANGER} strokeWidth={1 / k} />
         {lines.map((l, i) => (
-          <text key={i} x={x + pad} y={y + pad + fs * 0.85 + i * lh} fontSize={fs} fontFamily={FONT} fontWeight={600} fill="#9b1c1f">{l}</text>
+          <text key={i} x={x + pad} y={y + pad + fs * 0.85 + i * lh} fontSize={fs} fontFamily={FONT} fontWeight={500} fill="#8f1d16">{l}</text>
         ))}
       </g>
     );
@@ -517,16 +565,30 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
       const b = r.points[j];
       const poly = <polygon points={pts([a, b, outer[j], outer[i]])} fill={WALL} stroke={WALL} strokeWidth={0.5 / k} strokeLinejoin="round" />;
       if (!active) return <g key={i}>{poly}</g>;
-      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-      const omid = { x: (outer[i].x + outer[j].x) / 2, y: (outer[i].y + outer[j].y) / 2 };
-      const len = dist(omid, mid) || 1;
-      const lab = add(omid, { x: (omid.x - mid.x) / len, y: (omid.y - mid.y) / len }, 12 / k);
+      // Dimension line parallel to the wall, outside it: extension lines, 45° ticks, and the interior length on top.
+      const L = dist(a, b) || 1, ux = (b.x - a.x) / L, uy = (b.y - a.y) / L;
+      const side = (outer[i].x - a.x) * -uy + (outer[i].y - a.y) * ux >= 0 ? 1 : -1;
+      const nrm = { x: -uy * side, y: ux * side };
+      const off = r.wallThickness + 18 / k;
+      const da = add(a, nrm, off), db = add(b, nrm, off);
+      const tick = 4 / k, tk = { x: (ux + nrm.x) * tick, y: (uy + nrm.y) * tick };
+      const lab = add({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, nrm, off + 9 / k);
       const selected = sel?.type === 'wall' && sel.index === i;
+      const dc = selected ? ACCENT : DIM;
+      let deg = (Math.atan2(uy, ux) * 180) / Math.PI; // text runs along the wall, never upside down
+      if (deg > 90) deg -= 180; else if (deg <= -90) deg += 180;
       return (
         <g key={i} data-testid="plan-wall" data-wall={i} data-selected={selected ? 'true' : undefined} style={editable ? { cursor: 'pointer' } : undefined}>
           {poly}
-          {selected && <polygon data-chrome="" points={pts([a, b, outer[j], outer[i]])} fill={ACCENT} stroke={ACCENT} strokeWidth={3 / k} strokeLinejoin="round" />}
-          <Label at={lab} k={k} size={11} fill={selected ? ACCENT : INK}>{formatLength(dist(a, b), units)}</Label>
+          {selected && <polygon data-chrome="" points={pts([a, b, outer[j], outer[i]])} fill={ACCENT} stroke={ACCENT} strokeWidth={2 / k} strokeLinejoin="round" />}
+          <g stroke={dc} strokeWidth={0.75 / k} pointerEvents="none">
+            <line x1={add(a, nrm, r.wallThickness + 3 / k).x} y1={add(a, nrm, r.wallThickness + 3 / k).y} x2={add(da, nrm, 4 / k).x} y2={add(da, nrm, 4 / k).y} />
+            <line x1={add(b, nrm, r.wallThickness + 3 / k).x} y1={add(b, nrm, r.wallThickness + 3 / k).y} x2={add(db, nrm, 4 / k).x} y2={add(db, nrm, 4 / k).y} />
+            <line x1={da.x} y1={da.y} x2={db.x} y2={db.y} />
+            <line x1={da.x - tk.x} y1={da.y - tk.y} x2={da.x + tk.x} y2={da.y + tk.y} strokeWidth={1.25 / k} />
+            <line x1={db.x - tk.x} y1={db.y - tk.y} x2={db.x + tk.x} y2={db.y + tk.y} strokeWidth={1.25 / k} />
+          </g>
+          <Label at={lab} k={k} size={11} fill={dc} angle={deg}>{formatLength(dist(a, b), units)}</Label>
         </g>
       );
     });
@@ -536,7 +598,7 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
     const c = polygonCentroid(r.points);
     return (
       <g key={r.id} data-testid="plan-room-label" data-room-id={r.id} pointerEvents="none">
-        <Label at={{ x: c.x, y: c.y - 8 / k }} k={k} size={13}>{r.name}</Label>
+        <Label at={{ x: c.x, y: c.y - 8 / k }} k={k} size={12} weight={600} fill={THEME.text2}>{r.name}</Label>
         <Label at={{ x: c.x, y: c.y + 8 / k }} k={k} size={11} fill={MUTED}>{formatArea(polygonArea(r.points), units)}</Label>
       </g>
     );
@@ -556,11 +618,11 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
     return (
       <g data-chrome="" pointerEvents="none">
         {drawPts.length >= 2 && end && <polygon points={pts(outline)} fill={ACCENT} fillOpacity={0.08} stroke="none" />}
-        {drawPts.length > 1 && <polyline points={pts(drawPts)} fill="none" stroke={ACCENT} strokeWidth={3 / k} strokeLinejoin="round" />}
+        {drawPts.length > 1 && <polyline points={pts(drawPts)} fill="none" stroke={ACCENT} strokeWidth={2 / k} strokeLinejoin="round" />}
         {last && end && (
           <>
             <line x1={last.x} y1={last.y} x2={end.x} y2={end.y} stroke={ACCENT} strokeWidth={2 / k} strokeDasharray={`${6 / k} ${4 / k}`} />
-            <Label at={{ x: (last.x + end.x) / 2, y: (last.y + end.y) / 2 - 14 / k }} k={k}>{formatLength(dist(last, end), units)}</Label>
+            <Label at={{ x: (last.x + end.x) / 2, y: (last.y + end.y) / 2 - 14 / k }} k={k} fill={ACCENT} weight={600} bg="#ffffff">{formatLength(dist(last, end), units)}</Label>
           </>
         )}
         {drawPts.length >= 3 && (
@@ -595,7 +657,7 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
         className={`pe-svg pe-tool-${tool}`} xmlns="http://www.w3.org/2000/svg"
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
         onPointerLeave={() => setCursor(null)} onDoubleClick={onDoubleClick} onContextMenu={(e) => e.preventDefault()}>
-        <rect data-chrome="" x={0} y={0} width="100%" height="100%" fill="#fbf6ee" />
+        <rect data-chrome="" x={0} y={0} width="100%" height="100%" fill={THEME.planBg} />
         <PlanViewContext.Provider value={ctx}>
           <g data-plan-root="" transform={`translate(${view.x} ${view.y}) scale(${k})`}>
             {ui.showGrid && renderGrid()}
@@ -622,16 +684,17 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
             {ui.showClearances && room && (
               <g pointerEvents="none" strokeDasharray={`${5 / k} ${4 / k}`} strokeWidth={1.25 / k}>
                 {placed.flatMap(({ it, def }) => def.clearances.map((z, i) => (
-                  <polygon key={`${it.id}-${i}`} points={pts(clearancePolygon(it, def.size, z))} fill="#6bb3d6" fillOpacity={0.12} stroke="#4a90b8" />
+                  <polygon key={`${it.id}-${i}`} points={pts(clipToConvex(room.points, clearancePolygon(it, def.size, z)))} fill="#6bb3d6" fillOpacity={0.1} stroke="#5b8fb0" strokeOpacity={0.7} />
                 )))}
                 {room.openings.map((o) => {
-                  const poly = o.kind === 'door' ? doorSwingPolygon(room.points, o) : null;
-                  return poly && <polygon key={o.id} points={pts(poly)} fill="#f2b880" fillOpacity={0.18} stroke="#d08a4a" />;
+                  const swing = o.kind === 'door' ? doorSwingPolygon(room.points, o) : null;
+                  const poly = swing && clipToConvex(room.points, swing);
+                  return poly && poly.length > 0 && <polygon key={o.id} points={pts(poly)} fill="#f2b880" fillOpacity={0.14} stroke="#c98a12" strokeOpacity={0.7} />;
                 })}
               </g>
             )}
-            {issues.map((is) => is.zone && (
-              <polygon key={is.id} points={pts(is.zone)} fill={DANGER} fillOpacity={0.2} stroke={DANGER} strokeWidth={1.5 / k}
+            {issues.map((is) => is.zone && room && (
+              <polygon key={is.id} points={pts(clipToConvex(room.points, is.zone))} fill={DANGER} fillOpacity={0.16} stroke={DANGER} strokeWidth={1.25 / k}
                 strokeDasharray={`${5 / k} ${4 / k}`} pointerEvents="none" />
             ))}
             {solids.map(renderItem)}
@@ -652,10 +715,10 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
                   <g key={m.side}>
                     <line x1={m.from.x} y1={m.from.y} x2={m.to.x} y2={m.to.y} stroke={GUIDE} strokeWidth={1.25 / k} />
                     <circle cx={m.to.x} cy={m.to.y} r={2.5 / k} fill={GUIDE} />
-                    <Label at={{ x: (m.from.x + m.to.x) / 2, y: (m.from.y + m.to.y) / 2 }} k={k} size={11} fill={GUIDE}>{formatLength(m.distance, units)}</Label>
+                    <Label at={{ x: (m.from.x + m.to.x) / 2, y: (m.from.y + m.to.y) / 2 }} k={k} size={11} weight={600} fill={GUIDE} bg="#ffffff">{formatLength(m.distance, units)}</Label>
                   </g>
                 ))}
-                <Label at={{ x: dragged.it.x, y: dragged.it.y + 16 / k }} k={k} size={11}>
+                <Label at={{ x: dragged.it.x, y: dragged.it.y + 18 / k }} k={k} size={11} bg={THEME.surface}>
                   {`${formatLength(dragged.def.size.w, units)} × ${formatLength(dragged.def.size.d, units)}`}
                 </Label>
               </g>
@@ -667,8 +730,8 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
                 {room.points.map((p, i) => {
                   const on = (sel?.type === 'corner' && sel.index === i) || i === wallEnd;
                   return (
-                    <circle key={i} data-testid="plan-corner" data-index={i} cx={p.x} cy={p.y} r={(on ? 8 : 6) / k}
-                      fill={on ? ACCENT : '#ffffff'} stroke={ACCENT} strokeWidth={2 / k} style={{ cursor: 'move' }} />
+                    <circle key={i} data-testid="plan-corner" data-index={i} cx={p.x} cy={p.y} r={(on ? 6.5 : 5) / k}
+                      fill={on ? ACCENT : '#ffffff'} stroke={ACCENT} strokeWidth={1.5 / k} style={{ cursor: 'move' }} />
                   );
                 })}
               </g>
@@ -678,7 +741,7 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
           </g>
         </PlanViewContext.Provider>
         {hint && (
-          <text data-chrome="" x={vw / 2} y={vh / 2} fontSize={15} fontFamily={FONT} fontWeight={600} fill="#8c7f76"
+          <text data-chrome="" x={vw / 2} y={vh / 2} fontSize={15} fontFamily={FONT} fontWeight={500} fill={MUTED}
             textAnchor="middle" pointerEvents="none">{hint}</text>
         )}
       </svg>
@@ -690,9 +753,9 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
         </>
       )}
       <div className="pe-zoom">
-        <button type="button" className="btn" title="Zoom in" aria-label="Zoom in" onClick={() => zoomCenter(1.25)}>+</button>
-        <button type="button" className="btn" title="Zoom out" aria-label="Zoom out" onClick={() => zoomCenter(0.8)}>−</button>
-        <button type="button" className="btn" data-testid="plan-fit" title="Fit room" aria-label="Fit room" onClick={fit}>Fit</button>
+        <button type="button" className="btn" title="Zoom in" aria-label="Zoom in" onClick={() => zoomCenter(1.25)}><ZoomIn size={16} aria-hidden /></button>
+        <button type="button" className="btn" title="Zoom out" aria-label="Zoom out" onClick={() => zoomCenter(0.8)}><ZoomOut size={16} aria-hidden /></button>
+        <button type="button" className="btn" data-testid="plan-fit" title="Fit room" aria-label="Fit room" onClick={fit}><Maximize size={15} aria-hidden /> Fit</button>
       </div>
     </div>
   );

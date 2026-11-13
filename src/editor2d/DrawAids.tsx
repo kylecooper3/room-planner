@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useStore } from '../store/store';
 import { useBlobUrl } from '../store/blobs';
 import type { Vec2 } from '../types';
+import { Check, Undo2, X } from 'lucide-react';
 
 /** Hint bar + floating mini-toolbar shown while the draw-room tool is active. */
 export function DrawHud({ count, canFinish, measure, onUndo, onFinish, onCancel }: {
@@ -17,9 +18,9 @@ export function DrawHud({ count, canFinish, measure, onUndo, onFinish, onCancel 
         {measure ? <span className="pe-measure" data-testid="draw-measure">{measure}</span> : <small>Wheel to zoom · drag or Space + drag to pan</small>}
       </div>
       <div className="pe-minibar" data-testid="draw-hud">
-        <button type="button" className="btn" data-testid="draw-undo" disabled={!count} title="Undo the last point (Backspace)" onClick={onUndo}>↶ Undo point</button>
-        <button type="button" className="btn primary" data-testid="draw-finish" disabled={!canFinish} title="Finish the room (Enter, or click the first corner)" onClick={onFinish}>✓ Finish room</button>
-        <button type="button" className="btn" data-testid="draw-cancel" title="Cancel this room (Esc)" onClick={onCancel}>✕ Cancel</button>
+        <button type="button" className="btn" data-testid="draw-undo" disabled={!count} title="Undo the last point (Backspace)" onClick={onUndo}><Undo2 size={15} aria-hidden /> Undo point</button>
+        <button type="button" className="btn primary" data-testid="draw-finish" disabled={!canFinish} title="Finish the room (Enter, or click the first corner)" onClick={onFinish}><Check size={15} aria-hidden /> Finish room</button>
+        <button type="button" className="btn" data-testid="draw-cancel" title="Cancel this room (Esc)" onClick={onCancel}><X size={15} aria-hidden /> Cancel</button>
       </div>
     </>
   );

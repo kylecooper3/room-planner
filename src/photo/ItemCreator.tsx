@@ -199,7 +199,7 @@ export function ItemCreator() {
         {step === 1 ? (
           <div className="ic-step1">
             <div className="ic-photo">
-              {photoUrl ? <img src={photoUrl} alt="Your photo" /> : <span className="ic-placeholder">📷 Choose a photo of your furniture</span>}
+              {photoUrl ? <img src={photoUrl} alt="Your photo" /> : <span className="ic-placeholder">Choose a photo of your furniture</span>}
               <input type="file" accept="image/*" data-testid="photo-file"
                 onChange={(e) => { setPhoto(e.target.files?.[0] ?? null); setAnalysis(null); }} />
             </div>

@@ -2,24 +2,37 @@ import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import { CM_TO_M as M, type Opening, type Room, type Vec2 } from '../types';
-import { ToonMaterial, ToonOutline } from '../models/toon';
+import { getSurfaceMaterial, SurfaceMaterial, type Surface } from '../models/materials';
+import { THEME } from '../theme';
 import { buildWalls, wallFacesAway, type WallInfo } from './sceneMath';
 import type { Passage } from './walk';
-import { FLOOR_COLOR, floorTexture } from './floorTexture';
+import { FLOOR_ROUGHNESS, floorTexture } from './floorTexture';
 
 const KERB = 10;
-const FRAME_COLOR = '#fffaf2';
+const FRAME_COLOR = '#f4f3f0';
+const DOOR_COLOR = '#ebe8e2';
+/** Baseboard height and thickness (cm). */
+const BASE_H = 8, BASE_T = 1.2;
+const unitBox = new THREE.BoxGeometry(1, 1, 1);
 
-/** Toon box in metres. */
-function Box({ size, pos, rotY = 0, color, opacity }: { size: [number, number, number]; pos: [number, number, number]; rotY?: number; color: string; opacity?: number }) {
-  const glass = opacity !== undefined;
+/** Box in metres. */
+function Box({ size, pos, rotY = 0, color, surface = 'paint' }: { size: [number, number, number]; pos: [number, number, number]; rotY?: number; color: string; surface?: Surface }) {
+  const glass = surface === 'glass';
   return (
-    <mesh position={pos} rotation-y={rotY} castShadow={!glass} receiveShadow>
-      <boxGeometry args={size} />
-      <ToonMaterial color={color} transparent={glass} opacity={opacity} />
-      {!glass && <ToonOutline />}
+    <mesh geometry={unitBox} scale={size} position={pos} rotation-y={rotY} castShadow={!glass} receiveShadow={!glass}>
+      <SurfaceMaterial color={color} surface={surface} />
     </mesh>
   );
+}
+
+/** Wall piece: matte paint, with a dark "cut" cap on top when it reaches the ceiling (reads as a section from above). */
+function WallBox({ size, pos, color, cap }: { size: [number, number, number]; pos: [number, number, number]; color: string; cap: boolean }) {
+  const mats = useMemo(() => {
+    const paint = getSurfaceMaterial(color, 'paint');
+    // BoxGeometry groups: +x, -x, +y, -y, +z, -z
+    return cap ? [paint, paint, getSurfaceMaterial(THEME.planWall, 'paint'), paint, paint, paint] : paint;
+  }, [color, cap]);
+  return <mesh geometry={unitBox} scale={size} position={pos} material={mats} castShadow receiveShadow />;
 }
 
 /** Plan polygon → ShapeGeometry lying on the floor (use with rotation-x = -π/2); UVs are in metres. */
@@ -44,7 +57,15 @@ function Door({ o, w, t }: { o: Opening; w: WallInfo; t: number }) {
         size={[leaf * M, (h - f - 1) * M, 4 * M]}
         pos={[(hu + vx * leaf / 2) * M, (o.sill + (h - f - 1) / 2) * M, (hz + vz * leaf / 2) * M]}
         rotY={-Math.atan2(vz, vx)}
-        color="#d9a066"
+        color={DOOR_COLOR}
+      />
+      {/* lever handle, on both faces of the leaf */}
+      <Box
+        size={[12 * M, 2 * M, 10 * M]}
+        pos={[(hu + vx * (leaf - 8)) * M, (o.sill + 100) * M, (hz + vz * (leaf - 8)) * M]}
+        rotY={-Math.atan2(vz, vx)}
+        color="#8d8f93"
+        surface="metal"
       />
     </>
   );
@@ -61,14 +82,14 @@ function Window({ o, w, t }: { o: Opening; w: WallInfo; t: number }) {
       <Box size={[width * M, f * M, d]} pos={[cu * M, (o.sill + h - f / 2) * M, zc * M]} color={FRAME_COLOR} />
       <Box size={[f * M, (h - 2 * f) * M, d]} pos={[(u0 + f / 2) * M, cy * M, zc * M]} color={FRAME_COLOR} />
       <Box size={[f * M, (h - 2 * f) * M, d]} pos={[(u1 - f / 2) * M, cy * M, zc * M]} color={FRAME_COLOR} />
-      <Box size={[(width - 2 * f) * M, (h - 2 * f) * M, 1 * M]} pos={[cu * M, cy * M, zc * M]} color="#bfe3f2" opacity={0.35} />
+      <Box size={[(width - 2 * f) * M, (h - 2 * f) * M, 1 * M]} pos={[cu * M, cy * M, zc * M]} color="#cfe0e8" surface="glass" />
     </>
   );
 }
 
 function Fixture({ o, w }: { o: Opening; w: WallInfo }) {
   const depth = o.kind === 'radiator' ? 8 : 1.5;
-  const color = o.kind === 'radiator' ? '#f4f1ec' : '#ffffff';
+  const color = o.kind === 'radiator' ? '#efeeeb' : '#f7f7f5';
   return <Box size={[o.width * M, o.height * M, depth * M]} pos={[o.offset * M, (o.sill + o.height / 2) * M, w.side * depth / 2 * M]} color={color} />;
 }
 
@@ -104,19 +125,22 @@ export function RoomShell({ room, cutaway, passages, onFloorClick, onFloorDouble
   return (
     <group>
       <mesh geometry={floorGeo} rotation-x={-Math.PI / 2} receiveShadow onClick={onFloorClick} onDoubleClick={onFloorDoubleClick}>
-        <ToonMaterial color={FLOOR_COLOR[room.floor]} map={tex} />
-        <ToonOutline />
+        <meshStandardMaterial map={tex} color={tex ? '#ffffff' : '#c8b6a0'} roughness={FLOOR_ROUGHNESS[room.floor]} envMapIntensity={0.6} />
       </mesh>
       {walls.map((w, i) => {
         const zc = -w.side * t / 2 * M;
         const piece = (u0: number, u1: number, y0: number, y1: number, key: string) => (
-          <Box key={key} size={[(u1 - u0) * M, (y1 - y0) * M, t * M]} pos={[(u0 + u1) / 2 * M, (y0 + y1) / 2 * M, zc]} color={color} />
+          <WallBox key={key} size={[(u1 - u0) * M, (y1 - y0) * M, t * M]} pos={[(u0 + u1) / 2 * M, (y0 + y1) / 2 * M, zc]} color={color} cap={y1 >= H - 0.01} />
         );
+        const zb = w.side * BASE_T / 2 * M;
         return (
           <group key={i} position={[w.a.x * M, 0, w.a.y * M]} rotation-y={-w.angle}>
             <group ref={(g) => { (refs.current[i] ??= { full: null, kerb: null }).full = g; }}>
               {w.ext0 > 0 && piece(-w.ext0, 0, 0, H, 'e0')}
               {w.pieces.map((p, j) => piece(p.u0, p.u1, p.y0, p.y1, String(j)))}
+              {w.pieces.map((p, j) => p.y0 === 0 && p.y1 > BASE_H && p.u1 - p.u0 > 2 && (
+                <Box key={`b${j}`} size={[(p.u1 - p.u0) * M, BASE_H * M, BASE_T * M]} pos={[(p.u0 + p.u1) / 2 * M, BASE_H / 2 * M, zb]} color={FRAME_COLOR} />
+              ))}
               {w.ext1 > 0 && piece(w.length, w.length + w.ext1, 0, H, 'e1')}
               {w.openings.map((o) =>
                 o.kind === 'door' ? <Door key={o.id} o={o} w={w} t={t} />
@@ -130,8 +154,7 @@ export function RoomShell({ room, cutaway, passages, onFloorClick, onFloorDouble
               receiveShadow
             >
               <boxGeometry args={[(w.length + w.ext0 + w.ext1) * M, Math.min(KERB, H) * M, t * M]} />
-              <ToonMaterial color={color} />
-              <ToonOutline />
+              <primitive object={getSurfaceMaterial(THEME.planWall, 'paint')} attach="material" dispose={null} />
             </mesh>
           </group>
         );

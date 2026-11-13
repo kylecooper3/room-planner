@@ -1,3 +1,4 @@
+import { Ruler } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { rectRoomPoints } from '../core/geometry';
 import { useStore } from '../store/store';
@@ -36,7 +37,7 @@ export function RoomSetupDialog() {
   return (
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <form className="dialog app-room-setup" role="dialog" aria-modal="true" aria-label="Room dimensions" onSubmit={submit}>
-        <h2>📐 Enter your room's size</h2>
+        <h2><Ruler size={18} /> Room size</h2>
         <label className="field">Name<input value={name} onChange={(e) => setName(e.target.value)} /></label>
         <div className="app-row">
           {field('width', 'Width')}

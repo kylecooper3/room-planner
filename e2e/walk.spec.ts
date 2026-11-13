@@ -71,7 +71,12 @@ test('whole house in 3D: overview top view + pan, walk through the door', async 
   expect(p1.position[0]).toBeGreaterThan(4.6); // inside B (B starts at x = 4.12)
   expect((await state(page)).ui.snap).toBe(snap);
   // Keep going: B's far wall (x = 8.12) stops us at the body radius.
-  await hold(page, 's', 3500);
+  // Hold until the wall stops us rather than for a fixed time: walking speed per wall-clock second drops when frames
+  // are slow (the walk step caps dt at 0.1 s), e.g. when the whole suite runs in parallel.
+  await page.keyboard.down('s');
+  await expect.poll(async () => (await cam(page)).position[0], { timeout: 15_000 }).toBeGreaterThan(7.6);
+  await page.waitForTimeout(500); // push against the wall a little longer: it must hold us at the body radius
+  await page.keyboard.up('s');
   const p2 = await cam(page);
   expect(p2.position[0]).toBeGreaterThan(7.6);
   expect(p2.position[0]).toBeLessThanOrEqual(8.12 - 0.22 + 0.01);

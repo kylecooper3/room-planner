@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { activeItems, activeRoom, dragPlan, expect, loadDemo, open, planToScreen, roomByDimensions, state, test } from './fixtures';
+import { activeItems, activeRoom, displayToggle, dragPlan, expect, loadDemo, open, planToScreen, roomByDimensions, state, test } from './fixtures';
 
 const clickPlan = async (page: Page, x: number, y: number) => {
   const s = await planToScreen(page, { x, y });
@@ -27,7 +27,7 @@ test('clearance: a dresser in the door swing is flagged and explained, and clear
   await page.keyboard.up('Alt');
   await expect(item).toHaveAttribute('data-issue', 'true');
   await expect(page.getByTestId('issue-callout')).toContainText(/door swing/i); // selected → callout shown
-  await expect(page.locator('.app-inspector .note.error')).toContainText(/door swing/i);
+  await expect(page.locator('.app-inspector .app-issue')).toContainText(/door swing/i);
   await page.mouse.click(5, 300); // deselect (library panel blank area is not the plan) → room inspector issue list
   await page.getByTestId('plan-svg').click({ position: { x: 20, y: 20 } });
   await expect(page.getByTestId('issues-list')).toContainText(/door swing/i);
@@ -43,9 +43,9 @@ test('clearance: a dresser in the door swing is flagged and explained, and clear
   await expect(page.getByTestId('all-fits')).toBeVisible();
 
   expect(await overlayCount(page)).toBeGreaterThanOrEqual(2); // dresser drawer zone + door swing
-  await page.getByTestId('toggle-clearances').click();
+  await displayToggle(page, 'toggle-clearances');
   expect(await overlayCount(page)).toBe(0);
-  await page.getByTestId('toggle-clearances').click();
+  await displayToggle(page, 'toggle-clearances');
   expect(await overlayCount(page)).toBeGreaterThanOrEqual(2);
 });
 

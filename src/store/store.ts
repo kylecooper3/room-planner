@@ -90,6 +90,7 @@ export const useStore = create<AppState>((set, get) => {
     loadDemo: () => reset(buildDemoProject()),
     replaceProject: (p) => reset(p),
     setUnits: (units) => commit((p) => (p.units === units ? p : { ...p, units })),
+    setProjectName: (name) => commit((p) => (p.name === name ? p : { ...p, name })),
 
     addRoom: ({ points, ceilingHeight = 243.84, name }) => {
       const id = uid(), layoutId = uid();
@@ -98,7 +99,7 @@ export const useStore = create<AppState>((set, get) => {
         activeRoomId: id,
         rooms: [...p.rooms, {
           id, name: name ?? `Room ${p.rooms.length + 1}`, points, ceilingHeight, wallThickness: 12, openings: [],
-          wallColor: '#f3ead9', floor: 'wood', layouts: [{ id: layoutId, name: 'Layout 1', items: [] }], activeLayoutId: layoutId,
+          wallColor: '#f2f0ec', floor: 'wood', layouts: [{ id: layoutId, name: 'Layout 1', items: [] }], activeLayoutId: layoutId,
         }],
       }), { selection: null });
       return id;

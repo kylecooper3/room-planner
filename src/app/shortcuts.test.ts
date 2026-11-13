@@ -4,7 +4,7 @@ import type { AppState, Room, UIState } from '../types';
 import { handleShortcut, type KeyInput } from './shortcuts';
 
 const ACTIONS = [
-  'newProject', 'loadDemo', 'replaceProject', 'setUnits', 'addRoom', 'updateRoom', 'deleteRoom', 'setActiveRoom',
+  'newProject', 'loadDemo', 'replaceProject', 'setUnits', 'setProjectName', 'addRoom', 'updateRoom', 'deleteRoom', 'setActiveRoom',
   'addOpening', 'updateOpening', 'deleteOpening', 'addLayout', 'duplicateLayout', 'renameLayout', 'deleteLayout',
   'setActiveLayout', 'placeItem', 'updateItem', 'deleteItem', 'duplicateItem', 'saveDef', 'deleteDef', 'setUnderlay',
   'updateUnderlay', 'undo', 'redo', 'beginBatch', 'endBatch', 'setUI', 'select',

@@ -59,15 +59,25 @@ describe('initPersistence', () => {
     return { ...persistence, useStore };
   };
 
-  test('a tab that does not get the edit lock never autosaves and is marked read-only', async () => {
+  test('a tab that does not get the edit lock never writes the index or any plan, and is marked read-only', async () => {
     const saved: Project = { ...emptyProject(), name: 'Newer work in the other tab' };
-    await set(KEY, saved);
+    const index = [{ id: 'p1', name: saved.name, createdAt: 1, updatedAt: 1, roomCount: 0, areaCm2: 0, thumbnailSvg: '' }];
+    await set('room-planner/plans', index);
+    await set('room-planner/plan/p1', saved);
+    await set('room-planner/last-open', 'p1');
     const { useStore, usePersistence } = await load({ request: ((_n: string, _o: unknown, cb: (l: Lock | null) => unknown) => Promise.resolve(cb(null))) as never });
+    const fp = await import('./floorPlans');
     expect(usePersistence.getState().readOnly).toBe(true);
     expect(useStore.getState().project.name).toBe('Newer work in the other tab');
     useStore.getState().addRoom({ points: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 0, y: 100 }], name: 'Stale' });
     await new Promise((r) => setTimeout(r, 600));
-    expect(await get(KEY)).toEqual(saved);
+    await fp.closeFloorPlan();
+    await expect(fp.createFloorPlan()).rejects.toThrow(/read-only/);
+    await expect(fp.renameFloorPlan('p1', 'x')).rejects.toThrow(/read-only/);
+    await expect(fp.deleteFloorPlan('p1')).rejects.toThrow(/read-only/);
+    expect(await get('room-planner/plan/p1')).toEqual(saved);
+    expect(await get('room-planner/plans')).toEqual(index);
+    expect(await get('room-planner/last-open')).toBe('p1');
   });
 
   test('a damaged autosave is kept as a backup and the app starts fresh, with a notice', async () => {
@@ -78,5 +88,6 @@ describe('initPersistence', () => {
     expect(useStore.getState().project.rooms).toEqual([]);
     expect(usePersistence.getState().notice).toMatch(/backup/);
     expect(await get(BACKUP_KEY)).toEqual(damaged);
+    expect(await get(KEY)).toBeUndefined();
   });
 });

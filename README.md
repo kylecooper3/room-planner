@@ -53,8 +53,29 @@ huggingface.co and are skipped when it cannot be reached.
 
 ## Feature tour
 
+### Your floor plans
+Room Planner opens on the **Floor plans** home screen. Each floor plan (an apartment, a house, a single room) holds any
+number of rooms, and every plan is saved on this device. Cards show a thumbnail of the room outlines, the number of
+rooms, the total floor area and when you last edited it; the **⋯** menu opens, renames, duplicates, exports
+(`.roomplan`) or deletes a plan. **New floor plan** offers three starting points (enter dimensions, draw it, trace an
+image) or a blank plan; **Try the demo** adds a furnished demo bedroom; **Import** adds a `.roomplan` file as a new plan.
+The last plan you had open reopens on the next visit.
+
+![Floor plans](docs/screenshots/home.png)
+
+### The editor at a glance
+- **Top bar:** "Floor plans › *plan name*" (click *Floor plans* to go back; click the name to rename the plan), the view
+  switcher (Plan / 3D / Split / Compare, keys 1-4), undo/redo, the units switch, the **File** menu (new plan, import,
+  export `.roomplan`, export PNGs) and help.
+- **Tool rail** (left edge of the canvas): Select, Draw room, Door, Window, Outlet, Radiator, Trace plan, and at the bottom
+  **Display** (grid, snapping, clearance zones, cut-away walls, walk mode).
+- **Left sidebar:** the plan's **Rooms** (click one to work on it, double-click or the pencil to rename, bin to delete,
+  **Add room** for the three ways to add one) above the **Furniture** catalogue (searchable) and **My stuff**.
+- **Above the canvas:** the active room and its layouts as tabs.
+- **Inspector** (right): details of whatever is selected; with nothing selected, the room's details and its **Fit check**.
+
 ### Set up a room (three ways)
-The welcome card offers:
+A new, empty plan shows a small "Add your first room" card (the Rooms list's **Add room** menu offers the same):
 - **Enter dimensions**: type width, length and ceiling height; you get a rectangular room.
 - **Draw a room**: click corners in the plan. Corners snap to right angles, to other rooms' corners and walls, and to
   dashed alignment guides through the corners you already placed (a small coloured marker says why the cursor jumped;
@@ -79,29 +100,29 @@ The welcome card offers:
   5. *Check & fix*: drag corners (they snap the same way), click a wall to type its exact length or split it, then
      **Finish**.
 
-  The plan stays visible under the rooms while you work; it is never included in PNG exports. The toolbar's 🗺️ Floor plan
-  button reopens the panel.
+  The plan stays visible under the rooms while you work; it is never included in PNG exports. **Trace plan** in the tool
+  rail reopens the panel.
 
 ![Tracing a floor plan](docs/screenshots/floorplan.png)
 
 ![A traced apartment](docs/screenshots/floorplan-done.png)
 
-Or load the **demo bedroom** to look around first. A project can hold several rooms (room picker and "+ New room" in the
-toolbar).
+Or load the **demo bedroom** to look around first. A floor plan can hold several rooms (the **Rooms** list in the
+sidebar).
 
 ### Openings and room details
-Place doors, windows, outlets and radiators from the toolbar, then click one to edit it in the inspector: width, height,
+Place doors, windows, outlets and radiators from the tool rail, then click one to edit it in the inspector: width, height,
 sill height, offset along the wall, and for doors the hinge side and swing direction (in/out). Widths are kept between 5 cm
 and the length of the wall, and the opening stays on its wall. The room inspector sets the name, ceiling height, wall
 colour and floor (wood, carpet or tile) and shows the floor area.
 
 ### Units
-The "ft/in" / "m/cm" toolbar button switches the display between imperial and metric. Everything is stored in centimetres,
+The "ft · in" / "m · cm" button in the top bar switches the display between imperial and metric. Everything is stored in centimetres,
 so switching never changes the plan. Length fields accept things like `6' 2"`, `75in`, `190cm`, `1.9m`; plain numbers
 mean feet/inches or centimetres depending on the field and unit system. Invalid input is flagged next to the field.
 
 ### The 2D editor
-- Drag an item to move it; it snaps to walls and to other items (Alt while dragging, or the 🧲 toggle, turns snapping off).
+- Drag an item to move it; it snaps to walls and to other items (Alt while dragging, or Display → Snapping, turns snapping off).
   Distances to the walls are shown while dragging.
 - Drag the rotate handle to rotate in 15° steps (Shift: free rotation).
 - Every room of the project is shown: the active one normally, the others dimmed with their name and area; click a
@@ -114,8 +135,8 @@ mean feet/inches or centimetres depending on the field and unit system. Invalid 
 - The inspector shows the selected item's position and rotation and has Rotate 90°, Duplicate and Delete.
 
 ### Library and My stuff
-The **Furniture** tab lists 25 parametric presets (beds, sofas, desks, dressers, rugs, lamps, plants, TV...) with their real
-sizes; click one to place it. **My stuff** holds your own items: create one from a photo (see below) or without a photo,
+The **Furniture** tab lists 25 parametric presets (beds, sofas, desks, dressers, rugs, lamps, plants, TV...) by category
+with their footprint; type in the search box to filter, click one to place it. **My stuff** holds your own items: create one from a photo (see below) or without a photo,
 then place, edit, rename or delete it. Deleting an item from My stuff also removes it from every room.
 
 ![Item creator](docs/screenshots/item-creator.png)
@@ -124,15 +145,15 @@ then place, edit, rename or delete it. Deleting an item from My stuff also remov
 Items carry clearance zones (walkway beside a bed, drawer pull-out, chair push-back...) and doors have swing areas. The
 **Fit check** in the inspector lists every problem: overlapping items, items crossing a wall, blocked clearances and blocked
 door swings. Problem items are drawn red in both 2D and 3D, with the blocked zone in red; hover or select one to see why.
-The clearances toggle (🟧, key C) hides only the neutral zones; real problems always stay visible.
+Display → Clearance zones (key C) hides only the neutral zones; real problems always stay visible.
 
 ### 3D view, walk mode, cutaway
-The 3D view is a cartoon-style render of every room of the house (the active layout of each). It opens in **Overview**
+The 3D view is a realistic render (PBR materials, soft shadows) of every room of the house (the active layout of each). It opens in **Overview**
 mode: left-drag orbits, right-drag or Shift + drag pans, the wheel zooms, **Top view** looks straight down, and clicking an
-item selects it. Double-click the floor to start walking right there. **Cutaway** (✂️) hides the walls between the camera
+item selects it. Double-click the floor to start walking right there. **Cut away walls** (Display menu) hides the walls between the camera
 and the room.
 
-**Walk mode** (🚶): click the view to capture the mouse and look around (drag to look if mouse capture is unavailable);
+**Walk mode** (the Walk button over the 3D view): click the view to capture the mouse and look around (drag to look if mouse capture is unavailable);
 WASD or the arrow keys move, Shift sprints, Space jumps. You collide with walls and furniture and can walk through
 doorways from room to room. The first Esc releases the mouse; a second Esc (or O) returns to Overview.
 
@@ -157,14 +178,15 @@ Each room can have several layouts (the bar above the plan): add, duplicate, ren
 - Keyboard: Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y redo, Delete/Backspace delete, Ctrl/Cmd+D duplicate,
   R / Shift+R rotate 15°, arrow keys nudge 1 cm (Shift: 10 cm), V select tool, G grid, S snapping, C clearances,
   1-4 Plan/3D/Split/Compare, Esc deselect, ? help (the help overlay lists all keys and mouse gestures).
-- The project is autosaved to the browser's IndexedDB about half a second after each change and reloaded on the next visit.
-  Clearing the site data deletes it, so export anything you want to keep.
+- Every floor plan is autosaved to the browser's IndexedDB about half a second after each change; the last one you had
+  open reopens on the next visit. Clearing the site data deletes them, so export anything you want to keep.
 
 ### Export and import
-- **File → Export project** saves a single `.roomplan` file (a zip of `project.json` plus your photos and floor-plan
-  image). **Import project** opens one and replaces the current project.
-- **File → Export 2D PNG** renders the plan (room plus every item, even ones outside the room; no grid, underlay or
-  selection handles). **Export 3D PNG** saves the current 3D camera view.
+- **File → Export .roomplan** saves the open floor plan as a single `.roomplan` file (a zip of `project.json` plus your
+  photos and floor-plan image); the card menu on the home screen exports any plan. **Import .roomplan** adds the file as
+  a new floor plan (it never replaces one) and opens it.
+- **File → Export plan as PNG** renders the plan (room plus every item, even ones outside the room; no grid, underlay or
+  selection handles). **Export 3D view as PNG** saves the current 3D camera view.
 
 ## How photo → model works
 
@@ -186,7 +208,7 @@ Everything runs in the browser on the CPU (WebAssembly). Each stage has a fallba
   the download carries on in the background for next time.
 - After the first successful download, analysis also works offline in the production build (the ONNX Runtime WASM files
   are served by the app itself and precached by the service worker).
-- The result is a **parametric cartoon model** of the chosen category, built at exactly the dimensions you entered and
+- The result is a **parametric 3D model** of the chosen category, built at exactly the dimensions you entered and
   coloured from the photo. You can change the category, style options, each part's colour and the material before saving.
   It is not a 3D scan of your furniture.
 
@@ -199,10 +221,10 @@ Everything runs in the browser on the CPU (WebAssembly). Each stage has a fallba
 | `src/store/` | Zustand store, undo/redo, IndexedDB autosave and blob store, `.roomplan` import/export, demo room |
 | `src/editor2d/` | SVG plan editor and 2D PNG export |
 | `src/floorplan/` | floor-plan underlay, calibration, wall-ink snapping, room auto-detection, the docked tracing panel |
-| `src/models/` | parametric furniture generators, presets, toon rendering |
+| `src/models/` | parametric furniture generators, presets, PBR materials |
 | `src/photo/` | photo pipeline and the item creator dialog |
 | `src/view3d/` | react-three-fiber scene: room, items, orbit and walk cameras, cutaway, overlays, 3D PNG export |
-| `src/app/` | app shell: toolbar, library, inspector, layouts bar, dialogs, shortcuts |
+| `src/app/` | app shell: floor-plan home screen, top bar, tool rail, sidebar, inspector, layouts bar, dialogs, shortcuts |
 | `e2e/` | Playwright tests (and the screenshot generator) |
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the data flow and module boundaries.
@@ -221,7 +243,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the data flow and module boundaries.
 - Category and material guesses are heuristics and can be wrong; both are always editable before saving.
 - Offline use requires the production build (`npm run build && npm run preview`, or a deployed build) and one online visit
   first; the dev server does not work offline. Photo recognition offline also needs one earlier successful analysis.
-- Data lives only in this browser: no accounts, no sync between devices; use export/import to move a project.
+- Data lives only in this browser: no accounts, no sync between devices; use export/import to move a floor plan.
 - No AR, LiDAR import or photo-to-mesh; photo items are parametric approximations.
 - Items are boxes for collision and clearance purposes (their footprint rectangle), and heights are not considered when
   checking overlaps (e.g. a chair under a table counts as overlapping). Rugs are the only items that may be overlapped.

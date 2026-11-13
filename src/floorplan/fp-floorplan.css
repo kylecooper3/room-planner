@@ -76,4 +76,4 @@
 }
 .fp-drop-card strong { color: var(--ink); font-size: 18px; }
 .fp-drop.over .fp-drop-card { background: var(--accent-soft); transform: scale(1.02); }
-.fp-drop-icon { font-size: 44px; }
+.fp-drop-icon { color: var(--text2, #5c626c); display: flex; }

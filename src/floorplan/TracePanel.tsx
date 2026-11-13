@@ -68,7 +68,7 @@ function NameRoom({ room, rooms, onNext, onDone }: { room: Room; rooms: Room[]; 
       <input className="fp-input" data-testid="floorplan-room-name" placeholder={`Or type a name (now “${room.name}”)`} value={text}
         onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') commit(); }} />
       <div className="fp-row">
-        <button type="button" className="btn primary" data-testid="floorplan-trace-next" onClick={() => { commit(); onNext(); }}>✏️ Trace next room</button>
+        <button type="button" className="btn primary" data-testid="floorplan-trace-next" onClick={() => { commit(); onNext(); }}>Trace next room</button>
         <button type="button" className="btn" data-testid="floorplan-done-tracing" onClick={() => { commit(); onDone(); }}>Done tracing</button>
       </div>
     </div>
@@ -102,7 +102,7 @@ export function TracePanel() {
     return (
       <aside className="fp-dock collapsed" aria-label="Trace floor plan">
         <button type="button" className="btn fp-expand" data-testid="floorplan-expand" title="Show the tracing steps" onClick={() => useTrace.setState({ collapsed: false })}>
-          🗺️<span>Steps</span>
+          <span>Steps</span>
         </button>
       </aside>
     );
@@ -166,7 +166,7 @@ export function TracePanel() {
   return (
     <aside className="fp-dock" aria-label="Trace floor plan" data-testid="floorplan-panel">
       <header className="fp-dock-head">
-        <h2>🗺️ Trace floor plan</h2>
+        <h2>Trace floor plan</h2>
         <button type="button" className="btn fp-icon" title="Collapse the panel" aria-label="Collapse" data-testid="floorplan-collapse" onClick={() => useTrace.setState({ collapsed: true })}>‹</button>
         <button type="button" className="btn fp-icon" title="Close (your rooms and the plan stay)" aria-label="Close" data-testid="floorplan-close" onClick={close}>✕</button>
       </header>
@@ -175,7 +175,7 @@ export function TracePanel() {
           {!u ? (
             <>
               <p>Drop a picture of your floor plan onto the plan area, or choose a file. A screenshot from a listing is fine.</p>
-              <PickImage label="📁 Choose an image…" primary onError={setError} />
+              <PickImage label="Choose an image…" primary onError={setError} />
             </>
           ) : (
             <>
@@ -207,11 +207,11 @@ export function TracePanel() {
           </p>
           <button type="button" className="btn fp-choice" data-testid="floorplan-calibrate" disabled={!u}
             onClick={() => { useTrace.setState({ step: null }); s().setUI({ tool: 'calibrate', view: planView }); }}>
-            <strong>📏 Measure a known length</strong>
+            <strong>Measure a known length</strong>
             <small>Click both ends of something whose length you know, then type it. Nothing labelled? A standard interior door is about 30–32 in / 80 cm wide: click both sides of one.</small>
           </button>
           <button type="button" className={`btn fp-choice${areaOpen || t.knownArea ? ' active' : ''}`} data-testid="floorplan-area-option" disabled={!u} onClick={() => setAreaOpen(true)}>
-            <strong>📐 I know the total area</strong>
+            <strong>I know the total area</strong>
             <small>e.g. “531 sq ft” from the listing. You trace first; then the plan and your rooms are scaled together to match.</small>
           </button>
           {(areaOpen || t.knownArea !== null) && (
@@ -235,10 +235,10 @@ export function TracePanel() {
           {naming ? (
             <NameRoom room={naming} rooms={rooms} onNext={trace} onDone={doneTracing} />
           ) : tool === 'draw-room' ? (
-            <p className="fp-now" data-testid="floorplan-tracing">✏️ Tracing… follow the hint above the plan.</p>
+            <p className="fp-now" data-testid="floorplan-tracing">Tracing… follow the hint above the plan.</p>
           ) : (
             <div className="fp-row">
-              <button type="button" className="btn primary" data-testid="floorplan-trace" onClick={trace}>✏️ {rooms.length ? 'Trace next room' : 'Trace a room'}</button>
+              <button type="button" className="btn primary" data-testid="floorplan-trace" onClick={trace}>{rooms.length ? 'Trace next room' : 'Trace a room'}</button>
               {rooms.length > 0 && <button type="button" className="btn" data-testid="floorplan-done-tracing" onClick={doneTracing}>Done tracing →</button>}
             </div>
           )}
@@ -289,7 +289,7 @@ export function TracePanel() {
           )}
           <div className="fp-row">
             <button type="button" className="btn" data-testid="floorplan-detect" disabled={!u || busy} title={DETECT_TIP} onClick={detect}>
-              {busy ? 'Looking…' : '🔍 Auto-detect rooms'}
+              {busy ? 'Looking…' : 'Auto-detect rooms'}
             </button>
           </div>
         </Step>
@@ -299,9 +299,9 @@ export function TracePanel() {
           <p className="fp-tip">Tip: click on a wall where the plan shows a gap.</p>
           <div className="fp-row">
             <button type="button" className={`btn${placing('door') ? ' active' : ''}`} data-testid="floorplan-add-door" disabled={!rooms.length}
-              onClick={() => s().setUI({ tool: 'place-opening', openingKind: 'door', view: planView })}>🚪 Add a door</button>
+              onClick={() => s().setUI({ tool: 'place-opening', openingKind: 'door', view: planView })}>Add a door</button>
             <button type="button" className={`btn${placing('window') ? ' active' : ''}`} data-testid="floorplan-add-window" disabled={!rooms.length}
-              onClick={() => s().setUI({ tool: 'place-opening', openingKind: 'window', view: planView })}>🪟 Add a window</button>
+              onClick={() => s().setUI({ tool: 'place-opening', openingKind: 'window', view: planView })}>Add a window</button>
           </div>
           {(placing('door') || placing('window')) && <p className="fp-now">Now click a wall on the plan.</p>}
           <p className="fp-tip">Each click places one; click it afterwards to set its width or swing in the inspector.</p>
@@ -315,7 +315,7 @@ export function TracePanel() {
             <li>Double-click a wall to add a corner.</li>
             <li>Click another room to edit it; lower the opacity to check your outlines.</li>
           </ul>
-          <div className="fp-row"><button type="button" className="btn primary" data-testid="floorplan-finish" onClick={close}>✓ Finish</button></div>
+          <div className="fp-row"><button type="button" className="btn primary" data-testid="floorplan-finish" onClick={close}>Finish</button></div>
         </Step>
       </ol>
       {error && <div className="note error" role="alert">{error}</div>}

@@ -246,6 +246,8 @@ export interface Actions {
   /** Replace everything (import). Clears history. */
   replaceProject(p: Project): void;
   setUnits(u: UnitSystem): void;
+  /** Renames the project (one undo step). */
+  setProjectName(name: string): void;
 
   /** Creates a room with one empty layout, makes it active, returns its id. */
   addRoom(input: { points: Vec2[]; ceilingHeight?: Cm; name?: string }): string;

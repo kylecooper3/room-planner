@@ -26,7 +26,7 @@ describe('rooms', () => {
     s().select({ type: 'corner', index: 0 });
     const id = s().addRoom({ points: sq() });
     expect(s().project.activeRoomId).toBe(id);
-    expect(room()).toMatchObject({ name: 'Room 1', ceilingHeight: 243.84, wallThickness: 12, wallColor: '#f3ead9', floor: 'wood' });
+    expect(room()).toMatchObject({ name: 'Room 1', ceilingHeight: 243.84, wallThickness: 12, wallColor: '#f2f0ec', floor: 'wood' });
     expect(room().layouts.map((l) => l.name)).toEqual(['Layout 1']);
     expect(s().ui.selection).toBeNull();
     expect(s().addRoom({ points: sq(), name: 'X' }) && room().name).toBe('X');
@@ -123,6 +123,15 @@ describe('items', () => {
 });
 
 describe('history', () => {
+  test('setProjectName is its own undo step (undoing a later edit keeps the new name)', () => {
+    const before = s().project.name;
+    s().setProjectName('Loft');
+    s().addRoom({ points: sq() });
+    s().undo();
+    expect(s().project.name).toBe('Loft');
+    s().undo();
+    expect(s().project.name).toBe(before);
+  });
   test('undo/redo restore exact projects; UI actions untouched', () => {
     const p0 = s().project;
     s().addRoom({ points: sq() });

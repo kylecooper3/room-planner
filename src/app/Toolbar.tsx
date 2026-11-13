@@ -1,21 +1,28 @@
-import { useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import {
+  Box, ChevronRight, CircleQuestionMark, Columns2, Download, FileImage, FolderOpen, GitCompare, House, ImageDown, LayoutGrid,
+  Map as MapIcon, Menu as MenuIcon, Plus, Redo2, Undo2,
+} from 'lucide-react';
+import { useRef, useState } from 'react';
 import { exportPlanPng } from '../editor2d/exportPng';
-import { exportProject, importProject, PROJECT_FILE_EXTENSION } from '../store/projectFile';
+import { closeFloorPlan, importFloorPlan, openFloorPlan, renameFloorPlan, useFloorPlans } from '../store/floorPlans';
+import { exportProject, PROJECT_FILE_EXTENSION } from '../store/projectFile';
 import { useStore } from '../store/store';
-import type { OpeningKind, UIState, ViewMode } from '../types';
+import type { ViewMode } from '../types';
 import { exportView3dPng } from '../view3d/exportPng';
-import { startOptions } from './WelcomeCard';
+import { attempt, Note, say } from './feedback';
+import { RenameInput } from './inputs';
+import { Menu, MenuItem } from './Menu';
+import { newFloorPlan } from './WelcomeCard';
 
-const OPENINGS: [OpeningKind, string, string][] = [
-  ['door', '🚪', 'Door'], ['window', '🪟', 'Window'], ['outlet', '🔌', 'Outlet'], ['radiator', '♨️', 'Radiator'],
+const VIEWS: [ViewMode, string, typeof Box, string][] = [
+  ['plan', 'Plan', MapIcon, '1'], ['3d', '3D', Box, '2'], ['split', 'Split', Columns2, '3'], ['compare', 'Compare', GitCompare, '4'],
 ];
-const VIEWS: [ViewMode, string][] = [['plan', 'Plan'], ['3d', '3D'], ['split', 'Split'], ['compare', 'Compare']];
-type Toggle = 'showGrid' | 'snap' | 'showClearances' | 'cutaway' | 'walkMode';
 
 const s = () => useStore.getState();
-const closeMenu = (e: MouseEvent) => e.currentTarget.closest('details')?.removeAttribute('open');
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export const fileName = (name: string, ext: string) => `${(name.trim() || 'room-plan').replace(/[\\/:*?"<>|]+/g, '-')}${ext}`;
+export const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+export const MOD = isMac ? '⌘' : 'Ctrl';
 
 export function download(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob);
@@ -26,146 +33,111 @@ export function download(blob: Blob, name: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function Menu({ label, title, children, testId }: { label: ReactNode; title: string; children: ReactNode; testId?: string }) {
+/** Name of the open floor plan (the open project's name is the source of truth; the library meta follows on save). */
+export const usePlanName = () => useStore((st) => st.project.name);
+
+/** Hidden file input for .roomplan files; `pick()` opens the OS file dialog. */
+export function useRoomplanPicker(onFile: (file: File) => void, testId: string) {
+  const input = useRef<HTMLInputElement>(null);
+  const element = (
+    <input
+      ref={input} type="file" accept={PROJECT_FILE_EXTENSION} hidden data-testid={testId} aria-label="Import a floor plan file"
+      onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) onFile(file); }}
+    />
+  );
+  return { element, pick: () => input.current?.click() };
+}
+
+function Breadcrumb() {
+  const name = usePlanName();
+  const activeId = useFloorPlans((f) => f.activeId);
+  const [editing, setEditing] = useState(false);
   return (
-    <details className="app-menu">
-      <summary className="btn" title={title} data-testid={testId}>{label}</summary>
-      <div className="app-menu-list" role="menu">{children}</div>
-    </details>
+    <nav className="app-crumbs" aria-label="Breadcrumb">
+      <button className="app-crumb" data-testid="nav-home" title="All floor plans" onClick={() => void attempt('Closing the plan', closeFloorPlan)}>
+        <LayoutGrid size={16} /><span className="app-crumb-home-label">Floor plans</span>
+      </button>
+      <ChevronRight size={14} className="app-crumb-sep" aria-hidden />
+      {editing ? (
+        <RenameInput label="Floor plan name" value={name} onDone={(next) => {
+          setEditing(false);
+          if (next && activeId) void attempt('Rename', () => renameFloorPlan(activeId, next));
+        }} />
+      ) : (
+        <button className="app-crumb" data-testid="plan-name" title="Rename this floor plan" aria-label={`Floor plan: ${name}. Click to rename`}
+          onClick={() => setEditing(true)}>
+          <span className="app-plan-name">{name}</span>
+        </button>
+      )}
+    </nav>
   );
 }
 
 export function Toolbar() {
-  const ui = useStore((st) => st.ui);
+  const view = useStore((st) => st.ui.view);
   const project = useStore((st) => st.project);
   const canUndo = useStore((st) => st.canUndo);
   const canRedo = useStore((st) => st.canRedo);
-  const [note, setNote] = useState<{ text: string; error?: boolean } | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
-  const room = project.rooms.find((r) => r.id === project.activeRoomId);
-  const planOrSplit: ViewMode = ui.view === 'split' ? 'split' : 'plan';
+  const name = usePlanName();
+  const importer = useRoomplanPicker((file) => void attempt('Import', async () => {
+    const id = await importFloorPlan(file);
+    await openFloorPlan(id);
+    say(`Opened ${file.name}`);
+  }), 'import-file');
 
-  const run = async (what: string, job: () => Promise<void>) => {
-    try { await job(); } catch (err) {
-      setNote({ text: `${what} failed: ${err instanceof Error ? err.message : String(err)}`, error: true });
-    }
-  };
-  const exportPng = (kind: '2d' | '3d') => run(`${kind.toUpperCase()} export`, async () => {
+  const exportPng = (kind: '2d' | '3d') => attempt(`${kind.toUpperCase()} export`, async () => {
     const mounted: ViewMode[] = kind === '2d' ? ['plan', 'split'] : ['3d', 'split'];
     if (!mounted.includes(s().ui.view)) {
       s().setUI({ view: kind === '2d' ? 'plan' : '3d' });
       await wait(kind === '2d' ? 300 : 1200); // let the view (and lazy three.js chunk) mount and draw a frame
     }
     const blob = await (kind === '2d' ? exportPlanPng() : exportView3dPng());
-    download(blob, fileName(project.name, kind === '2d' ? '-plan.png' : '-3d.png'));
+    download(blob, fileName(name, kind === '2d' ? '-plan.png' : '-3d.png'));
   });
-
-  const tool = (active: boolean, patch: Partial<UIState>, label: string, icon: string, testId: string, disabled = false) => (
-    <button
-      key={testId} className={`btn${active ? ' active' : ''}`} aria-pressed={active} title={label} aria-label={label}
-      data-testid={testId} disabled={disabled} onClick={() => s().setUI(patch)}
-    >
-      <span aria-hidden>{icon}</span><span className="app-tb-label">{label}</span>
-    </button>
-  );
-  const toggle = (key: Toggle, label: string, icon: string, testId: string) => (
-    <button
-      className={`btn${ui[key] ? ' active' : ''}`} aria-pressed={ui[key]} title={label} aria-label={label}
-      data-testid={testId} onClick={() => s().setUI({ [key]: !ui[key] })}
-    >
-      <span aria-hidden>{icon}</span>
-    </button>
-  );
 
   return (
     <header className="app-toolbar">
-      <div className="app-tb-group">
-        <span className="app-logo" aria-hidden>🏠</span>
-        {project.rooms.length > 0 && (
-          <select
-            className="app-room-picker" aria-label="Room" title="Switch room" data-testid="room-picker"
-            value={project.activeRoomId ?? ''} onChange={(e) => s().setActiveRoom(e.target.value)}
-          >
-            {project.rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
-        )}
-        <Menu label="+ New room" title="Add a new room" testId="new-room">
-          {startOptions(ui.view).map((o) => (
-            <button key={o.id} className="btn" role="menuitem" data-testid={`new-room-${o.id}`} onClick={(e) => { closeMenu(e); o.run(); }}>
-              {o.icon} {o.label}
-            </button>
-          ))}
-        </Menu>
-        {room && (
-          <button
-            className="btn danger" title="Delete this room" aria-label="Delete this room" data-testid="room-delete"
-            onClick={() => confirm(`Delete "${room.name}" and all its layouts?`) && s().deleteRoom(room.id)}
-          >🗑️</button>
-        )}
+      <div className="app-tb-left">
+        <span className="app-mark" aria-hidden><House size={16} /></span>
+        <Breadcrumb />
       </div>
 
-      <div className="app-tb-group" role="group" aria-label="Tools">
-        {tool(ui.tool === 'select', { tool: 'select' }, 'Select', '👆', 'tool-select')}
-        {tool(ui.tool === 'draw-room', { tool: 'draw-room', view: planOrSplit }, 'Draw room', '✏️', 'tool-draw-room')}
-        {OPENINGS.map(([kind, icon, label]) =>
-          tool(ui.tool === 'place-opening' && ui.openingKind === kind, { tool: 'place-opening', openingKind: kind, view: planOrSplit },
-            label, icon, `tool-${kind}`, !room))}
-        <button className="btn" title="Floor plan underlay" aria-label="Floor plan underlay" data-testid="open-floorplan" onClick={() => s().setUI({ dialog: 'floorplan', view: planOrSplit })}>
-          🗺️ <span className="app-tb-label">Floor plan</span>
-        </button>
-      </div>
-
-      <div className="app-tb-group app-segmented" role="group" aria-label="View">
-        {VIEWS.map(([v, label]) => (
-          <button key={v} className={`btn${ui.view === v ? ' active' : ''}`} aria-pressed={ui.view === v} title={`${label} view`}
-            data-testid={`view-${v}`} onClick={() => s().setUI({ view: v })}>{label}</button>
+      <div className="app-segmented" role="group" aria-label="View">
+        {VIEWS.map(([v, label, Icon, key]) => (
+          <button key={v} className={`btn${view === v ? ' active' : ''}`} aria-pressed={view === v} title={`${label} view (${key})`}
+            aria-label={`${label} view`} data-testid={`view-${v}`} onClick={() => s().setUI({ view: v })}>
+            <Icon size={15} /><span className="app-seg-label">{label}</span>
+          </button>
         ))}
       </div>
 
-      <div className="app-tb-group" role="group" aria-label="Display">
-        {toggle('showGrid', 'Grid', '#️⃣', 'toggle-grid')}
-        {toggle('snap', 'Snapping', '🧲', 'toggle-snap')}
-        {toggle('showClearances', 'Clearances', '🟧', 'toggle-clearances')}
-        {toggle('cutaway', 'Cutaway walls', '✂️', 'toggle-cutaway')}
-        {ui.view === '3d' && toggle('walkMode', 'Walk mode', '🚶', 'toggle-walk')}
-        <button className="btn" title="Switch units" aria-label="Switch units" data-testid="units-toggle"
+      <div className="app-tb-right">
+        <button className="btn ghost icon" title={`Undo (${MOD}+Z)`} aria-label="Undo" data-testid="undo" disabled={!canUndo} onClick={() => s().undo()}><Undo2 size={16} /></button>
+        <button className="btn ghost icon" title={`Redo (${MOD}+Shift+Z)`} aria-label="Redo" data-testid="redo" disabled={!canRedo} onClick={() => s().redo()}><Redo2 size={16} /></button>
+        <span className="app-tb-sep" aria-hidden />
+        <button className="btn ghost app-units" data-testid="units-toggle"
+          title={`Units: ${project.units === 'imperial' ? 'feet and inches' : 'metres and centimetres'} (click to switch)`}
+          aria-label={`Units: ${project.units}. Switch units`}
           onClick={() => s().setUnits(project.units === 'imperial' ? 'metric' : 'imperial')}>
-          {project.units === 'imperial' ? 'ft/in' : 'm/cm'}
+          {project.units === 'imperial' ? 'ft · in' : 'm · cm'}
+        </button>
+        <Menu label={<><MenuIcon size={16} /><span className="app-tb-label">File</span></>} title="File: new, import, export" testId="file-menu" className="btn ghost" place="right">
+          <MenuItem icon={<Plus size={16} />} label="New floor plan" testId="file-new" onClick={() => void newFloorPlan()} />
+          <MenuItem icon={<LayoutGrid size={16} />} label="All floor plans" testId="file-home" onClick={() => void attempt('Closing the plan', closeFloorPlan)} />
+          <div className="app-menu-sep" />
+          <MenuItem icon={<FolderOpen size={16} />} label="Import .roomplan…" hint="Adds it as a new floor plan" testId="file-import" onClick={importer.pick} />
+          <MenuItem icon={<Download size={16} />} label="Export .roomplan" hint="Backup or move to another device" testId="file-export"
+            onClick={() => void attempt('Export', async () => download(await exportProject(s().project), fileName(name, PROJECT_FILE_EXTENSION)))} />
+          <div className="app-menu-sep" />
+          <MenuItem icon={<FileImage size={16} />} label="Export plan as PNG" testId="export-plan-png" onClick={() => void exportPng('2d')} />
+          <MenuItem icon={<ImageDown size={16} />} label="Export 3D view as PNG" testId="export-3d-png" onClick={() => void exportPng('3d')} />
+        </Menu>
+        {importer.element}
+        <button className="btn ghost icon" title="Help and keyboard shortcuts (?)" aria-label="Help" data-testid="open-help" onClick={() => s().setUI({ dialog: 'help' })}>
+          <CircleQuestionMark size={17} />
         </button>
       </div>
-
-      <div className="app-tb-group">
-        <button className="btn" title="Undo (Ctrl+Z)" aria-label="Undo" data-testid="undo" disabled={!canUndo} onClick={() => s().undo()}>↶</button>
-        <button className="btn" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" data-testid="redo" disabled={!canRedo} onClick={() => s().redo()}>↷</button>
-        <Menu label="File" title="Project file" testId="file-menu">
-          <button className="btn" role="menuitem" data-testid="file-new" onClick={(e) => { closeMenu(e); if (confirm('Start a new, empty project? Unsaved work will be lost.')) s().newProject(); }}>
-            📄 New project
-          </button>
-          <button className="btn" role="menuitem" data-testid="file-export" onClick={(e) => { closeMenu(e); void run('Export', async () => download(await exportProject(project), fileName(project.name, PROJECT_FILE_EXTENSION))); }}>
-            💾 Export project
-          </button>
-          <button className="btn" role="menuitem" data-testid="file-import" onClick={(e) => { closeMenu(e); fileInput.current?.click(); }}>
-            📂 Import project…
-          </button>
-          <button className="btn" role="menuitem" data-testid="export-plan-png" onClick={(e) => { closeMenu(e); void exportPng('2d'); }}>🖼️ Export 2D PNG</button>
-          <button className="btn" role="menuitem" data-testid="export-3d-png" onClick={(e) => { closeMenu(e); void exportPng('3d'); }}>🎨 Export 3D PNG</button>
-        </Menu>
-        <input
-          ref={fileInput} type="file" accept={PROJECT_FILE_EXTENSION} hidden data-testid="import-file" aria-label="Import project file"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            e.target.value = '';
-            if (file && confirm('Open this project file? It replaces the current project, and unsaved work will be lost.')) void run('Import', async () => { s().replaceProject(await importProject(file)); setNote({ text: `Opened ${file.name}` }); });
-          }}
-        />
-        <button className="btn" title="Help and shortcuts (?)" aria-label="Help" data-testid="open-help" onClick={() => s().setUI({ dialog: 'help' })}>?</button>
-      </div>
-
-      {note && (
-        <div className={`note app-tb-note${note.error ? ' error' : ''}`} role="status" data-testid="toolbar-note">
-          {note.text} <button className="app-link" onClick={() => setNote(null)} aria-label="Dismiss">✕</button>
-        </div>
-      )}
+      <Note />
     </header>
   );
 }

@@ -52,7 +52,7 @@ const sofaLike = (s: StyleParams, W: number, H: number, D: number, cushions: num
   p.push(bx('body', [-xi, xi], [legH, seatBase], [-D / 2, D / 2], r(Math.min(seatBase - legH, 10))));
   p.push(bx('body', [-xi, xi], [legH, H], [-D / 2, -D / 2 + backD], r(Math.min(backD, 12))));
   if (armW > 0) {
-    const armRound = arm === 'rounded' ? armW * 0.45 : arm === 'slim' ? armW * 0.3 : r(armW * 0.5);
+    const armRound = arm === 'rounded' ? armW * 0.3 : arm === 'slim' ? armW * 0.2 : r(armW * 0.3);
     for (const sx of [-1, 1]) {
       const x: R = sx < 0 ? [-W / 2, -xi] : [xi, W / 2];
       p.push(bx('body', x, [legH, armTop], [-D / 2, D / 2], armRound));
@@ -65,7 +65,7 @@ const sofaLike = (s: StyleParams, W: number, H: number, D: number, cushions: num
     p.push(bx('cushion', x, [seatTop, seatTop + (H - seatTop) * 0.8], zb, r(Math.min(len(zb), len(x)) * 0.8)));
   }
   if (legH > 0) p.push(...legs('frame', legType === 'tapered', [-W / 2 + 2, W / 2 - 2].sort((a, b) => a - b) as R,
-    [-D / 2 + 2, D / 2 - 2].sort((a, b) => a - b) as R, clamp(Math.min(W, D) * 0.06, 0.5, 7), legH));
+    [-D / 2 + 2, D / 2 - 2].sort((a, b) => a - b) as R, clamp(Math.min(W, D) * 0.04, 0.5, 4.5), legH));
   return p;
 };
 
@@ -116,7 +116,7 @@ const chair: Generator = (s, W, H, D) => {
       p.push(rd('accent', 'sphere', cx * 0.92, cz * 0.92, caster * 1.2, caster * 1.2, [0, caster]));
     }
   } else {
-    const lw = clamp(Math.min(W, D) * 0.08, 0.5, 4);
+    const lw = clamp(Math.min(W, D) * 0.06, 0.5, 3.5);
     p.push(...legs('frame', false, [xs[0] + 1, xs[1] - 1].sort((a, b) => a - b) as R, [-D / 2 + 1, D / 2 - 1].sort((a, b) => a - b) as R, lw, seatBot));
   }
   return p;
@@ -137,31 +137,32 @@ const bed: Generator = (s, W, H, D) => {
   const z0 = -D / 2 + hbT;
   const z1 = D / 2 - fbT;
   p.push(bx('frame', [-W / 2, W / 2], [legH, frameTop], [z0, z1]));
-  p.push(bx('cushion', [-W / 2 + inset, W / 2 - inset], [frameTop, mTop], [z0, z1 - inset], Math.min(mTop - frameTop, W) * 0.3));
-  if (legH > 0) p.push(...legs('frame', false, [-W / 2, W / 2], [-D / 2, D / 2], clamp(Math.min(W, D) * 0.05, 0.5, 8), legH));
+  p.push(bx('cushion', [-W / 2 + inset, W / 2 - inset], [frameTop, mTop], [z0, z1 - inset], Math.min(mTop - frameTop, W) * 0.15));
+  if (legH > 0) p.push(...legs('frame', false, [-W / 2 + 2, W / 2 - 2].sort((a, b) => a - b) as R, [-D / 2 + 2, D / 2 - 2].sort((a, b) => a - b) as R,
+    clamp(Math.min(W, D) * 0.03, 0.5, 5), legH));
   const zh: R = [-D / 2, -D / 2 + hbT];
-  if (hbStyle === 'panel' || hbStyle === 'tufted') {
-    p.push(bx('body', [-W / 2, W / 2], [0, H], zh, Math.min(hbT, W) * 0.45));
-    if (hbStyle === 'tufted') {
-      const b = Math.min(hbT * 0.6, W * 0.05, (H - sleepTop) * 0.15);
-      for (const y of [sleepTop + (H - sleepTop) * 0.35, sleepTop + (H - sleepTop) * 0.7]) {
-        for (const x of spans(-W / 2, W / 2, 4, 0)) p.push(rd('accent', 'sphere', mid(x), zh[1], b, b, [y - b / 2, y + b / 2]));
-      }
-    }
+  if (hbStyle === 'panel') {
+    p.push(bx('body', [-W / 2, W / 2], [0, H], zh, Math.min(hbT, W) * 0.2));
+  } else if (hbStyle === 'tufted') {
+    // channel-tufted: a thin back board with upholstered vertical channels in front of it
+    const back: R = [zh[0], zh[0] + hbT * 0.35];
+    p.push(bx('frame', [-W / 2, W / 2], [0, H], back));
+    const n = Math.max(3, Math.round(W / 22));
+    for (const x of spans(-W / 2, W / 2, n, Math.min(1, W * 0.01))) p.push(bx('body', x, [frameTop, H], [back[1], zh[1]], Math.min(len(x), hbT) * 0.3));
   } else if (hbStyle === 'slatted') {
     const pw = Math.min(W * 0.06, 8);
     const rail = Math.min((H - sleepTop) * 0.2, 10);
     p.push(bx('frame', [-W / 2, -W / 2 + pw], [0, H], zh), bx('frame', [W / 2 - pw, W / 2], [0, H], zh));
     p.push(bx('frame', [-W / 2 + pw, W / 2 - pw], [H - rail, H], zh));
-    for (const x of spans(-W / 2 + pw, W / 2 - pw, 5, W * 0.08)) p.push(bx('body', x, [frameTop, H - rail], [zh[0] + hbT * 0.2, zh[1] - hbT * 0.2]));
+    for (const x of spans(-W / 2 + pw, W / 2 - pw, 5, W * 0.08)) p.push(bx('frame', x, [frameTop, H - rail], [zh[0] + hbT * 0.2, zh[1] - hbT * 0.2]));
   }
   if (fbT > 0) p.push(bx('frame', [-W / 2, W / 2], [0, mTop + bedding * 0.5], [z1, D / 2], fbT * 0.4));
   const pd = Math.min((z1 - z0) * 0.18, 40);
   for (const x of spans(-W / 2 + inset * 2, W / 2 - inset * 2, num(s, 'pillowCount'), W * 0.04)) {
-    p.push(bx('accent', x, [mTop, sleepTop], [z0 + inset, z0 + inset + pd], Math.min(bedding, pd, len(x)) * 0.45));
+    p.push(bx('accent', x, [mTop, sleepTop], [z0 + inset, z0 + inset + pd], Math.min(bedding, pd, len(x)) * 0.2));
   }
   if (flag(s, 'blanket')) {
-    p.push(bx('body', [-W / 2, W / 2], [mTop - (mTop - frameTop) * 0.5, mTop + bedding * 0.25], [z0 + (z1 - z0) * 0.4, z1], bedding * 0.2));
+    p.push(bx('body', [-W / 2 + inset * 0.5, W / 2 - inset * 0.5], [mTop - (mTop - frameTop) * 0.6, mTop + bedding * 0.2], [z0 + (z1 - z0) * 0.3, z1 - inset * 0.5], bedding * 0.15));
   }
   return p;
 };
@@ -173,7 +174,7 @@ const table: Generator = (s, W, H, D) => {
   const ly: R = [0, H - topT];
   p.push(roundTop ? rd('body', 'cylinder', 0, 0, W, D, [H - topT, H]) : bx('body', [-W / 2, W / 2], [H - topT, H], [-D / 2, D / 2], topT * 0.3));
   const m = Math.min(W, D);
-  const lw = clamp(m * 0.06, 0.5, 8);
+  const lw = clamp(m * 0.05, 0.5, 5);
   const legType = str(s, 'legType');
   if (legType === 'four') {
     const fx = roundTop ? W * 0.3 + lw / 2 : W / 2 - m * 0.04;
@@ -294,10 +295,13 @@ const shelf: Generator = (s, W, H, D) => {
   for (let i = 0; i <= n + 1; i++) {
     const y = Math.min(i * gap, H - t);
     p.push(bx('body', xi, [y, y + t], zs));
-    if (i <= n) { // a little cluster of books on each level
-      const bw = len(xi) * 0.35;
-      const bx0 = i % 2 ? xi[1] - len(xi) * 0.08 - bw : xi[0] + len(xi) * 0.08;
-      p.push(bx('accent', [bx0, bx0 + bw], [y + t, y + t + (gap - t) * 0.65], [zs[0] + len(zs) * 0.1, zs[1] - len(zs) * 0.15]));
+    if (i <= n) { // a few books of varying height on each level
+      const bw = len(xi) * 0.4;
+      const bx0 = i % 2 ? xi[1] - len(xi) * 0.06 - bw : xi[0] + len(xi) * 0.06;
+      spans(bx0, bx0 + bw, 4, 0).forEach((x, j) => {
+        const bh = (gap - t) * [0.72, 0.62, 0.78, 0.55][(i + j) % 4];
+        p.push(bx('accent', x, [y + t, y + t + bh], [zs[0] + len(zs) * 0.12, zs[1] - len(zs) * [0.15, 0.22, 0.12, 0.2][(i + j) % 4]]));
+      });
     }
   }
   return p;
@@ -343,24 +347,35 @@ const plant: Generator = (s, W, H, D) => {
   const fh = H - potH;
   const f0 = potH * 0.95;
   const foliage = str(s, 'foliage');
+  // Clumps placed on a golden-angle spiral: irregular enough to read as foliage, but deterministic.
+  const clump = (i: number, n: number, rx: number, rz: number, y: R, size: number, role: PartRole) => {
+    const a = i * 2.39996, f = Math.sqrt((i + 0.5) / n);
+    p.push(rd(role, 'sphere', Math.cos(a) * rx * f, Math.sin(a) * rz * f, W * size, D * size, y));
+  };
   if (foliage === 'bushy') {
-    p.push(rd('cushion', 'sphere', 0, 0, W * 0.7, D * 0.7, [f0, f0 + fh * 0.75]));
-    for (const [cx, cz] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
-      p.push(rd('cushion', 'sphere', cx * W * 0.25, cz * D * 0.25, W * 0.5, D * 0.5, [f0 + fh * 0.1, f0 + fh * 0.6]));
+    p.push(rd('cushion', 'sphere', 0, 0, W * 0.62, D * 0.62, [f0, f0 + fh * 0.7]));
+    for (let i = 0; i < 9; i++) {
+      const y0 = f0 + fh * (0.05 + (i % 3) * 0.12);
+      clump(i, 9, W * 0.3, D * 0.3, [y0, Math.min(H, y0 + fh * 0.48)], 0.34 + (i % 2) * 0.06, i % 3 ? 'cushion' : 'accent');
     }
-    p.push(rd('accent', 'sphere', 0, 0, W * 0.45, D * 0.45, [H - fh * 0.45, H]));
+    p.push(rd('accent', 'sphere', 0, 0, W * 0.36, D * 0.36, [H - fh * 0.42, H]));
   } else if (foliage === 'tall') {
-    const tw = Math.min(W, D) * 0.06;
-    p.push(rd('frame', 'cylinder', 0, 0, tw, tw, [potH * 0.8, potH + fh * 0.5]));
-    p.push(rd('cushion', 'sphere', 0, 0, W, D, [potH + fh * 0.15, potH + fh * 0.6]));
-    p.push(rd('cushion', 'sphere', 0, 0, W * 0.75, D * 0.75, [potH + fh * 0.4, potH + fh * 0.85]));
-    p.push(rd('accent', 'sphere', 0, 0, W * 0.45, D * 0.45, [potH + fh * 0.7, H]));
-  } else {
-    for (const [cx, cz] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
-      p.push(rd('cushion', 'sphere', cx * W * 0.35, cz * D * 0.35, W * 0.3, D * 0.3, [f0, f0 + fh * 0.8]));
+    const tw = Math.min(W, D) * 0.045;
+    p.push(rd('frame', 'cylinder', 0, 0, tw, tw, [potH * 0.8, potH + fh * 0.75]));
+    for (let i = 0; i < 11; i++) {
+      const t = i / 10, cy = potH + fh * (0.3 + t * 0.6), r = 0.42 * (1 - Math.abs(t - 0.45));
+      const sz = 0.22 + 0.1 * (1 - Math.abs(t - 0.45));
+      clump(i, 11, W * r, D * r, [cy - fh * 0.1, Math.min(H, cy + fh * 0.1)], sz, i % 3 ? 'cushion' : 'accent');
     }
-    p.push(rd('cushion', 'sphere', 0, 0, W * 0.3, D * 0.3, [f0 + fh * 0.1, H]));
-    p.push(rd('accent', 'sphere', 0, 0, W * 0.45, D * 0.45, [f0, f0 + fh * 0.35]));
+    p.push(rd('accent', 'sphere', 0, 0, W * 0.22, D * 0.22, [H - fh * 0.16, H]));
+  } else {
+    // upright blades fanning out of the pot
+    for (let i = 0; i < 9; i++) {
+      const a = i * 2.39996, f = 0.15 + (i % 3) * 0.12;
+      const top = f0 + fh * (0.55 + ((i * 7) % 5) * 0.1);
+      p.push(rd(i % 2 ? 'cushion' : 'accent', 'sphere', Math.cos(a) * W * f, Math.sin(a) * D * f, W * 0.16, D * 0.16, [f0, Math.min(H, top)]));
+    }
+    p.push(rd('cushion', 'sphere', 0, 0, W * 0.14, D * 0.14, [f0, H]));
   }
   return p;
 };

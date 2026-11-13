@@ -42,6 +42,25 @@ export const polygonCentroid: PolygonCentroid = (poly) => {
   return { x: cx / (6 * a), y: cy / (6 * a) };
 };
 
+/** subject ∩ convex (Sutherland–Hodgman with `subject` as the clipped polygon, so `subject` may be non-convex). [] if < 3 points. */
+export const clipToConvex = (subject: Polygon, convex: Polygon): Polygon => {
+  const k = signedArea(convex) >= 0 ? 1 : -1;
+  let out = subject;
+  for (let i = 0; i < convex.length && out.length; i++) {
+    const a = convex[i], b = convex[(i + 1) % convex.length];
+    const side = (p: Vec2) => k * ((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x));
+    const input = out;
+    out = [];
+    for (let j = 0; j < input.length; j++) {
+      const p = input[j], q = input[(j + 1) % input.length];
+      const sp = side(p), sq = side(q);
+      if (sp >= 0) out.push(p);
+      if ((sp >= 0) !== (sq >= 0)) { const t = sp / (sp - sq); out.push({ x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t }); }
+    }
+  }
+  return out.length >= 3 ? out : [];
+};
+
 export const pointInPolygon: PointInPolygon = (p, poly) => {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {

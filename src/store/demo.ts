@@ -48,7 +48,7 @@ export const buildDemoProject = (): Project => {
       points: rectRoomPoints(W, L),
       ceilingHeight: 243.84,
       wallThickness: 12,
-      wallColor: '#f3ead9',
+      wallColor: '#f2f0ec',
       floor: 'wood',
       openings: [
         // Wall 3 runs from (0,L) up to (0,0): offset 10 + half width puts the door 10 cm from the bottom-left corner.

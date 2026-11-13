@@ -13,9 +13,9 @@ export function ProposalLayer() {
         const c = polygonCentroid(poly);
         return (
           <g key={i} data-testid="plan-proposal">
-            <polygon points={poly.map((p) => `${p.x},${p.y}`).join(' ')} fill="#2f9be0" fillOpacity={0.12} stroke="#2f9be0"
+            <polygon points={poly.map((p) => `${p.x},${p.y}`).join(' ')} fill="#2f6bdc" fillOpacity={0.12} stroke="#2f6bdc"
               strokeWidth={2.5 / k} strokeDasharray={`${8 / k} ${5 / k}`} />
-            <circle cx={c.x} cy={c.y} r={13 / k} fill="#2f9be0" />
+            <circle cx={c.x} cy={c.y} r={13 / k} fill="#2f6bdc" />
             <text x={c.x} y={c.y} fontSize={13 / k} fontWeight={700} fill="#ffffff" textAnchor="middle" dominantBaseline="central">{i + 1}</text>
           </g>
         );

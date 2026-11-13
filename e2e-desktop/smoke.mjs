@@ -34,7 +34,8 @@ async function launch() {
   assert.ok(page, 'app page appeared');
   await page.waitForLoadState('load');
   await page.reload(); // so every request of this session is observed from the start
-  await page.getByTestId('app').waitFor({ timeout: 30_000 });
+  // First launch shows the floor-plan library; later launches reopen the last plan in the editor.
+  await page.locator('[data-testid=app], [data-testid=home]').first().waitFor({ timeout: 30_000 });
   return { proc, browser, page };
 }
 
@@ -55,9 +56,11 @@ try {
   let app = await launch();
   let { page } = app;
   assert.equal(await page.evaluate(() => 'serviceWorker' in navigator && navigator.serviceWorker.controller), null, 'no service worker');
+  await page.getByTestId('home').waitFor();
+  step('floor-plan library shown on first launch');
+  await page.getByTestId('home-demo').first().click();
   await page.getByTestId('file-menu').waitFor();
-  step('toolbar rendered');
-  await page.getByTestId('load-demo').click();
+  step('demo floor plan created and opened in the editor');
   await page.getByTestId('plan-item').first().waitFor();
   const before = await page.getByTestId('plan-item').count();
   await page.getByTestId('view-3d').click();

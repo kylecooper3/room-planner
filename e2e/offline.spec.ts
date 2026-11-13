@@ -38,14 +38,14 @@ test.describe('offline (production build + service worker)', () => {
 
   test('app loads and the demo works offline after the first visit', async ({ page, context }) => {
     await page.goto(URL);
-    await expect(page.getByTestId('app')).toBeVisible();
+    await expect(page.getByTestId('home')).toBeVisible();
     await page.evaluate(async () => { await navigator.serviceWorker.ready; });
     await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller), { timeout: 60_000 }).toBe(true);
 
     await context.setOffline(true);
     await page.reload();
-    await expect(page.getByTestId('welcome')).toBeVisible();
-    await page.getByTestId('load-demo').click();
+    await expect(page.getByTestId('home-empty')).toBeVisible();
+    await page.getByTestId('home-demo').click();
     await expect(page.getByTestId('plan-item')).toHaveCount(6);
     await page.getByTestId('view-3d').click(); // lazy three.js chunk comes from the precache too
     await expect(page.locator('[data-testid=view3d] canvas')).toBeVisible();

@@ -5,13 +5,16 @@ import { CM_TO_M as M, isFlat, type Issue, type ItemDef, type Layout, type Place
 import { useStore } from '../store/store';
 import { useActiveRoom, useGetDef, useIssues, useLayout } from '../store/selectors';
 import { ItemModelView } from '../models/ItemModelView';
-import { clearancePolygon, doorSwingPolygon } from '../core/geometry';
+import { clearancePolygon, clipToConvex, doorSwingPolygon } from '../core/geometry';
 import { RoomShell, floorShape } from './RoomShell';
 import { OrbitRig, WalkRig, type Bounds, type LockState } from './cameras';
 import { itemRotationY, planToWorld, walkStart } from './sceneMath';
 import { houseColliders, housePassages } from './walk';
 import { registerView3d } from './exportPng';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { THEME } from '../theme';
 import './v3-view3d.css';
+import { ArrowDownToLine, Footprints, Map as MapIcon } from 'lucide-react';
 
 export interface View3DProps {
   /** Layout of the active room to show; defaults to the active layout. */
@@ -20,12 +23,12 @@ export interface View3DProps {
   readOnly?: boolean;
 }
 
-const BG = '#fdf0e1';
+const BG = THEME.sceneBg;
 const CLICK_SLOP = 4; // px: a pointer that moved more than this was a drag, not a click
 const NO_ROOMS: Room[] = [];
 
 /**
- * Live cartoon 3D render of the whole house (every room). Compare panes (a `layoutId` or `readOnly`) show only the active
+ * Live 3D render of the whole house (every room). Compare panes (a `layoutId` or `readOnly`) show only the active
  * room with the given layout. Fills its parent. Wrapper element has data-testid="view3d".
  */
 export function View3D({ layoutId, readOnly = false }: View3DProps) {
@@ -64,13 +67,13 @@ export function View3D({ layoutId, readOnly = false }: View3DProps) {
           <div className="v3-seg" role="group" aria-label="Camera">
             {/* blur: a focused button would be "clicked" by Space (jump) */}
             <button type="button" data-testid="cam-overview" aria-pressed={!walkMode} title="Orbit, pan and zoom over the whole home"
-              onClick={(e) => { e.currentTarget.blur(); setWalk(false); }}>🗺 Overview</button>
+              onClick={(e) => { e.currentTarget.blur(); setWalk(false); }}><MapIcon size={15} aria-hidden /> Overview</button>
             <button type="button" data-testid="cam-walk" aria-pressed={walkMode} title="Walk around inside, first person"
-              onClick={(e) => { e.currentTarget.blur(); setWalk(true); }}>🚶 Walk</button>
+              onClick={(e) => { e.currentTarget.blur(); setWalk(true); }}><Footprints size={15} aria-hidden /> Walk</button>
           </div>
           {!walkMode && (
             <button type="button" className="v3-top" data-testid="cam-top" aria-pressed={top} title="Look straight down (click again to go back)"
-              onClick={(e) => { e.currentTarget.blur(); setTop((t) => !t); }}>⬇ Top view</button>
+              onClick={(e) => { e.currentTarget.blur(); setTop((t) => !t); }}><ArrowDownToLine size={15} aria-hidden /> Top view</button>
           )}
         </div>
       )}
@@ -157,6 +160,7 @@ function Scene({ rooms, activeRoom, layoutId, readOnly, walkMode, top, setCursor
       <color attach="background" args={[BG]} />
       <Registrar readOnly={readOnly} />
       <Lights bounds={bounds} />
+      <Ground bounds={bounds} />
       {rooms.map((room) => {
         const active = room.id === activeRoom.id;
         return (
@@ -252,22 +256,51 @@ function Registrar({ readOnly }: { readOnly: boolean }) {
   return null;
 }
 
+/** Image-based lighting from three's procedural RoomEnvironment (built locally: no HDRI download, works offline). */
+function useRoomEnvironment(intensity: number) {
+  const gl = useThree((s) => s.gl);
+  const scene = useThree((s) => s.scene);
+  useEffect(() => {
+    const pmrem = new THREE.PMREMGenerator(gl);
+    const room = new RoomEnvironment();
+    const env = pmrem.fromScene(room, 0.04).texture;
+    room.dispose();
+    pmrem.dispose();
+    scene.environment = env;
+    scene.environmentIntensity = intensity;
+    return () => { if (scene.environment === env) scene.environment = null; env.dispose(); };
+  }, [gl, scene, intensity]);
+}
+
+/** Large matte ground plane around the house: catches the walls' shadows so the model sits on something. */
+function Ground({ bounds }: { bounds: Bounds }) {
+  const size = bounds.span * 6 + 40;
+  return (
+    <mesh rotation-x={-Math.PI / 2} position={[bounds.cx, -0.012, bounds.cz]} receiveShadow raycast={() => null}>
+      <planeGeometry args={[size, size]} />
+      <meshStandardMaterial color={THEME.sceneGround} roughness={1} envMapIntensity={0.4} />
+    </mesh>
+  );
+}
+
 function Lights({ bounds }: { bounds: Bounds }) {
   const { cx, cz, span } = bounds;
   const target = useMemo(() => new THREE.Object3D(), []);
   const r = span / 2 + 1;
+  useRoomEnvironment(0.55);
   return (
     <>
-      <hemisphereLight args={['#fff4e6', '#e9d6c2', 1.1]} />
-      <ambientLight intensity={0.35} />
+      <hemisphereLight args={['#ffffff', '#cfc8bd', 0.55]} />
       <primitive object={target} position={[cx, 0, cz]} />
       <directionalLight
         target={target}
+        color="#fff3e2"
         position={[cx + r * 0.8, r * 2 + 2, cz + r * 0.5]}
-        intensity={1.5}
+        intensity={2.2}
         castShadow
-        shadow-mapSize={[1024, 1024]}
-        shadow-bias={-0.0005}
+        shadow-mapSize={[2048, 2048]}
+        shadow-radius={4}
+        shadow-bias={-0.0004}
         shadow-normalBias={0.02}
         shadow-camera-left={-r}
         shadow-camera-right={r}
@@ -358,12 +391,17 @@ function Overlays({ room, items, issues, showNeutral }: { room: Room; items: Ent
       const p = doorSwingPolygon(room.points, o);
       if (p) polys.push(p);
     }
-    return polys;
+    // Zones are convex: clipping to the room keeps a clearance past a wall from spilling onto the ground outside.
+    return polys.map((p) => clipToConvex(room.points, p)).filter((p) => p.length);
   }, [items, room.points, room.openings, showNeutral]);
+  const zones = useMemo(() => issues.flatMap((is) => {
+    const z = is.zone && clipToConvex(room.points, is.zone);
+    return z && z.length ? [{ id: is.id, z }] : [];
+  }), [issues, room.points]);
   return (
     <>
-      {neutral.map((p, i) => <FlatPoly key={`n${i}`} poly={p} color="#8c7f76" opacity={0.14} lift={0.004} />)}
-      {issues.map((is) => is.zone && <FlatPoly key={is.id} poly={is.zone} color="#e5484d" opacity={0.35} lift={0.006} />)}
+      {neutral.map((p, i) => <FlatPoly key={`n${i}`} poly={p} color={THEME.accent} opacity={0.1} lift={0.004} />)}
+      {zones.map(({ id, z }) => <FlatPoly key={id} poly={z} color={THEME.danger} opacity={0.3} lift={0.006} />)}
     </>
   );
 }

@@ -10,7 +10,7 @@ const b = (key: string, label: string, def: boolean): StyleParamDef => ({ key, l
 const ARM = sel('armStyle', 'Arms', ['square', 'rounded', 'slim', 'none'], 'rounded');
 const LEG = sel('legType', 'Legs', ['block', 'tapered', 'none'], 'tapered');
 const LEG_H = n('legHeight', 'Leg height (cm)', 10, 0, 30, 1);
-const ROUND = n('roundness', 'Roundness', 0.5, 0, 1, 0.05);
+const ROUND = n('roundness', 'Roundness', 0.3, 0, 1, 0.05);
 const HANDLE = sel('handleStyle', 'Handles', ['knob', 'bar', 'none']);
 
 /** Style parameters per category (drives the editor UI). */

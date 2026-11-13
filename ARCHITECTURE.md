@@ -17,8 +17,8 @@ SVG 2D editor, Vitest, Playwright. `src/types.ts` is the contract: all shared ty
 | `src/core/` | agent 1 | pure geometry, units, snapping, collision/clearance (`findIssues`) | types |
 | `src/store/` | agent 2 | Zustand store, undo/redo, selectors/hooks, blob store, IndexedDB autosave, `.roomplan` import/export, demo room | types, core, models/presets |
 | `src/editor2d/` | agent 3 | SVG plan editor: items, walls, openings, corner editing, draw-room tool, guides, dimensions, PNG export | types, core, store, floorplan layers |
-| `src/floorplan/` | agent 4 | underlay layer, calibration tool, auto-detect walls, floor-plan dialog | types, core, store, editor2d/planContext |
-| `src/models/` | agent 5 | parametric generators, style schema, presets, toon material/outline, `ItemModelView` | types |
+| `src/floorplan/` | agent 4 | underlay layer, calibration tool, auto-detect rooms, docked tracing panel | types, core, store, editor2d/planContext |
+| `src/models/` | agent 5 | parametric generators, style schema, presets, PBR materials + procedural textures (`materials.tsx`), `ItemModelView` | types |
 | `src/photo/` | agent 6 | photo pipeline (segmentation, palette, classification, material, part mapping), `ItemCreator` UI | types, core/units, store, models |
 | `src/view3d/` | agent 7 | r3f scene: room shell, items, lighting, orbit + walk, cutaway, selection, clearance overlays, PNG export | types, core, store, models |
 | `src/app/` | agent 8 | app shell: toolbar, library panel, inspector, layouts bar, room-setup dialog, shortcuts, help, compare/split layout | everything |
@@ -61,7 +61,7 @@ Tracing a floor plan = the editor's own `draw-room` tool used over the underlay 
 ```
 ItemModel = ParametricModel { category, style, colors, material } | MeshModel { meshId }   // MeshModel = future photo-to-mesh
 generateModel(model, size) -> ModelPart[]      // pure data: primitives with role/shape/size/position (cm)
-<ItemModelView model size highlight/>          // r3f renderer of ModelPart[] with ToonMaterial + ToonOutline
+<ItemModelView model size highlight/>          // r3f renderer of ModelPart[] with PBR materials; outline only when selected/error
 STYLE_SCHEMA[category] -> StyleParamDef[]      // drives the editor UI generically
 ```
 - Invariant: the union AABB of the parts is exactly `[-w/2,w/2]×[0,h]×[-d/2,d/2]` — models always match entered dimensions.
@@ -102,5 +102,5 @@ paint red and a one-line message. Both views read `useIssues()`; overlays are ga
   (`npm run build && npm run preview`), not of the dev server.
 
 ## Future-friendly seams
-Accounts/cloud sync → swap `store/persistence.ts`. Photo-to-mesh → `MeshModel`. LiDAR/AR import → produce `Room.points`.
+Accounts/cloud sync → swap `store/floorPlans.ts` (floor-plan library + autosave; `persistence.ts` re-exports it). Photo-to-mesh → `MeshModel`. LiDAR/AR import → produce `Room.points`.
 AI layout suggestions → pure function `(room, defs) -> PlacedItem[]` feeding `addLayout`.

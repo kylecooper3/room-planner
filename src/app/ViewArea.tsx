@@ -1,9 +1,11 @@
+import { Copy } from 'lucide-react';
 import { lazy, Suspense, useState, type ReactNode } from 'react';
 import { PlanEditor } from '../editor2d/PlanEditor';
 import { PlanDropZone, usePlanDrop } from '../floorplan/PlanDropZone';
 import { TracePanel } from '../floorplan/TracePanel';
 import { useActiveRoom } from '../store/selectors';
 import { useStore } from '../store/store';
+import { ToolRail } from './ToolRail';
 import { WelcomeCard } from './WelcomeCard';
 
 // three.js stays out of the first-paint bundle.
@@ -32,7 +34,7 @@ function CompareView() {
         <p>Compare needs two layouts of this room.</p>
         <button className="btn primary" data-testid="compare-duplicate"
           onClick={() => s().setUI({ compareLayoutId: s().duplicateLayout(room.activeLayoutId) })}>
-          ⧉ Duplicate this layout to compare
+          <Copy size={15} /> Duplicate this layout to compare
         </button>
       </div>
     );
@@ -73,6 +75,7 @@ export function ViewArea() {
   return (
     <main className="app-view" data-testid="view-area" {...drop.handlers}>
       <div className="app-view-row">
+        <ToolRail />
         {tracing && <TracePanel />}
         <div className="app-view-main">
           {view === 'compare' ? <CompareView /> : (
@@ -82,9 +85,9 @@ export function ViewArea() {
             </div>
           )}
           {((tracing && !hasPlan) || drop.over) && <PlanDropZone over={drop.over} error={drop.error} onError={drop.setError} />}
+          {showWelcome && <div className="app-welcome-backdrop"><WelcomeCard /></div>}
         </div>
       </div>
-      {showWelcome && <div className="app-welcome-backdrop"><WelcomeCard /></div>}
     </main>
   );
 }

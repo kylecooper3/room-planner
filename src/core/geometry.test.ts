@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import type { Opening, Vec2 } from '../types';
 import {
-  clearancePolygon, distancesToWalls, doorSwingPolygon, getOpeningGeometry, itemPolygon, localToPlan, pointInPolygon,
+  clearancePolygon, clipToConvex, distancesToWalls, doorSwingPolygon, getOpeningGeometry, itemPolygon, localToPlan, pointInPolygon,
   polygonArea, polygonCentroid, polygonInsideRoom, polygonsIntersect, projectOnWalls, rectRoomPoints, snapItem,
   snapRightAngle, wallSegments,
 } from './geometry';
@@ -148,5 +148,16 @@ describe('snapItem', () => {
   test('nothing in range', () => {
     const r = snapItem({ roomPoints: rect, others: [], pose: { x: 150, y: 200, rotation: 0 }, size, threshold: 5 });
     expect(r).toEqual({ x: 150, y: 200, guides: [] });
+  });
+});
+
+describe('clipToConvex', () => {
+  test('L-shaped room ∩ rectangle crossing the notch = the rectangle minus the notch', () => {
+    const r = clipToConvex(L, [{ x: 100, y: 100 }, { x: 300, y: 100 }, { x: 300, y: 300 }, { x: 100, y: 300 }]);
+    expect(polygonArea(r)).toBeCloseTo(30000, 6);
+    for (const p of r) expect(p.x >= 100 && p.x <= 300 && p.y >= 100 && p.y <= 300).toBe(true);
+  });
+  test('zone fully outside the room → empty', () => {
+    expect(clipToConvex(L, [{ x: 500, y: 0 }, { x: 600, y: 0 }, { x: 600, y: 100 }, { x: 500, y: 100 }])).toEqual([]);
   });
 });

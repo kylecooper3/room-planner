@@ -2,27 +2,27 @@ import { useMemo } from 'react';
 import { RoundedBox } from '@react-three/drei';
 import { BoxGeometry, Color, CylinderGeometry, SphereGeometry } from 'three';
 import { CM_TO_M } from '../types';
-import type { ItemModel, Material, ModelPart, Size3 } from '../types';
+import type { ItemModel, ModelPart, Size3 } from '../types';
+import { THEME } from '../theme';
 import { generateModel } from './generate';
-import { ToonMaterial, ToonOutline } from './toon';
+import { HighlightOutline, SurfaceMaterial, surfaceFor, type Surface } from './materials';
 
 export interface ItemModelViewProps {
   model: ItemModel;
   size: Size3;
-  /** selected = accent outline; error = red tint + red outline. */
+  /** selected = thin accent outline; error = red tint + red outline. */
   highlight?: 'none' | 'selected' | 'error';
 }
 
-// Shared unit geometries (scaled per mesh), low segment counts for integrated GPUs.
+// Shared unit geometries (scaled per mesh), modest segment counts for integrated GPUs.
 const GEOM = {
   box: new BoxGeometry(1, 1, 1),
-  cylinder: new CylinderGeometry(0.5, 0.5, 1, 14),
-  sphere: new SphereGeometry(0.5, 14, 10),
-  cone: new CylinderGeometry(0.2, 0.5, 1, 14), // frustum: reads as a lampshade / pot
+  cylinder: new CylinderGeometry(0.5, 0.5, 1, 24),
+  sphere: new SphereGeometry(0.5, 20, 14),
+  cone: new CylinderGeometry(0.3, 0.5, 1, 24), // frustum: reads as a lampshade / pot
 };
-const ERROR = '#e5484d';
-const OUTLINE = { none: ['#4a3b33', 2], selected: ['#f08a4b', 4], error: [ERROR, 3] } as const;
-const tint = (hex: string) => `#${new Color(hex).lerp(new Color(ERROR), 0.55).getHexString()}`;
+const OUTLINE = { selected: [THEME.accent, 2.5], error: [THEME.danger, 2.5] } as const;
+const tint = (hex: string) => `#${new Color(hex).lerp(new Color(THEME.danger), 0.5).getHexString()}`;
 
 /** Renders an item model as an r3f <group> in METRES, origin at the floor centre, +z front. Must be inside a <Canvas>. */
 export function ItemModelView({ model, size, highlight = 'none' }: ItemModelViewProps) {
@@ -32,19 +32,22 @@ export function ItemModelView({ model, size, highlight = 'none' }: ItemModelView
       : [{ role: 'body', shape: 'box', size: [w, h, d], position: [0, h / 2, 0], color: '#a0a0a0' }]),
     [model, w, d, h],
   );
-  const material: Material = model.kind === 'parametric' ? model.material : 'plastic';
-  const colors = useMemo(() => parts.map((p) => {
+  const looks = useMemo(() => parts.map((p): [string, Surface] => {
     const c = p.color ?? (model.kind === 'parametric' ? model.colors[p.role] : '#a0a0a0');
-    return highlight === 'error' ? tint(c) : c;
+    const s = model.kind === 'parametric' ? surfaceFor(model.category, p.role, model.material) : 'plastic';
+    return [highlight === 'error' ? tint(c) : c, s];
   }), [parts, model, highlight]);
-  const [outline, thickness] = OUTLINE[highlight];
+  const outline = highlight === 'none' ? null : OUTLINE[highlight];
 
   return (
     <group scale={CM_TO_M}>
       {parts.map((p, i) => {
-        const children = <><ToonMaterial color={colors[i]} material={material} /><ToonOutline color={outline} thickness={thickness} /></>;
+        const children = <>
+          <SurfaceMaterial color={looks[i][0]} surface={looks[i][1]} />
+          {outline && <HighlightOutline color={outline[0]} thickness={outline[1]} />}
+        </>;
         return p.shape === 'box' && p.round
-          ? <RoundedBox key={i} args={p.size} radius={p.round} smoothness={2} position={p.position} rotation={p.rotation} castShadow receiveShadow>{children}</RoundedBox>
+          ? <RoundedBox key={i} args={p.size} radius={p.round} smoothness={3} position={p.position} rotation={p.rotation} castShadow receiveShadow>{children}</RoundedBox>
           : <mesh key={i} geometry={GEOM[p.shape]} scale={p.size} position={p.position} rotation={p.rotation} castShadow receiveShadow>{children}</mesh>;
       })}
     </group>

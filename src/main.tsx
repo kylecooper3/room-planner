@@ -4,9 +4,10 @@ import './styles/tokens.css';
 import { App } from './app/App';
 import { initPersistence } from './store/persistence';
 import { useStore } from './store/store';
+import { useFloorPlans } from './store/floorPlans';
 
 // Test/debug hook used by the Playwright suite.
-(window as unknown as { __store: typeof useStore }).__store = useStore;
+Object.assign(window, { __store: useStore, __floorPlans: useFloorPlans });
 
 void initPersistence();
 // Offline cache for the browser build only; the desktop app (Tauri) already serves every file locally.

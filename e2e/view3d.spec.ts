@@ -1,4 +1,4 @@
-import { activeItems, expect, expectCanvasRendered, loadDemo, pngVariety, state, test } from './fixtures';
+import { activeItems, displayToggle, expect, expectCanvasRendered, loadDemo, pngVariety, state, test } from './fixtures';
 
 type V3 = [number, number, number];
 const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -37,13 +37,13 @@ test('3D: click an item to select it, cutaway and walk mode', async ({ page }) =
 
   const shot = async () => canvas.screenshot();
   const withCutaway = await shot();
-  await page.getByTestId('toggle-cutaway').click();
+  await displayToggle(page, 'toggle-cutaway');
   expect((await state(page)).ui.cutaway).toBe(false);
   await expect.poll(async () => (await shot()).equals(withCutaway)).toBe(false); // the near walls are back
-  await page.getByTestId('toggle-cutaway').click();
+  await displayToggle(page, 'toggle-cutaway');
   expect((await state(page)).ui.cutaway).toBe(true);
 
-  await page.getByTestId('toggle-walk').click();
+  await displayToggle(page, 'toggle-walk');
   expect((await state(page)).ui.walkMode).toBe(true);
   await expect(page.locator('.v3-hint')).toBeVisible();
   const before = await shot();

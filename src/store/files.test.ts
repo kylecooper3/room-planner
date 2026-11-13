@@ -9,6 +9,7 @@ vi.mock('../models/presets', () => ({ PRESETS: [] }));
 import { deleteBlob, getBlob, putBlob } from './blobs';
 import { exportProject, importProject } from './projectFile';
 import { initPersistence } from './persistence';
+import { createFloorPlan } from './floorPlans';
 import { emptyProject, useStore } from './store';
 
 const bytes = (b: Blob) => b.arrayBuffer().then((a) => Array.from(new Uint8Array(a)));
@@ -54,10 +55,11 @@ describe('project file', () => {
   });
 });
 
-test('persistence: autosave then reload restores the project', async () => {
+test('persistence: autosave then reload restores the open floor plan', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   await initPersistence();
   expect(useStore.getState().hydrated).toBe(true);
+  await createFloorPlan();
   useStore.getState().addRoom({ points: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 0, y: 100 }], name: 'Saved' });
   const saved = useStore.getState().project;
   await vi.advanceTimersByTimeAsync(500);

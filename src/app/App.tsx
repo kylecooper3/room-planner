@@ -1,8 +1,11 @@
+import { House, X } from 'lucide-react';
 import { lazy, Suspense, useEffect } from 'react';
+import { useFloorPlans } from '../store/floorPlans';
 import { usePersistence } from '../store/persistence';
 import { useStore } from '../store/store';
 import { ErrorBoundary } from './ErrorBoundary';
 import { HelpOverlay } from './HelpOverlay';
+import { HomeScreen } from './HomeScreen';
 import { Inspector } from './Inspector';
 import { LayoutsBar } from './LayoutsBar';
 import { LibraryPanel } from './LibraryPanel';
@@ -31,10 +34,10 @@ function PersistenceBanner() {
   if (!readOnly && !notice) return null;
   return (
     <div className="app-banner" role="alert" data-testid="persistence-banner">
-      {readOnly && <div className="note error" data-testid="read-only-banner">Room Planner is open in another tab — this tab is read-only. Close the other tab and reload.</div>}
+      {readOnly && <div className="note error" data-testid="read-only-banner">Room Planner is open in another tab, so this tab is read-only. Close the other tab and reload.</div>}
       {notice && (
         <div className="note">
-          {notice} <button className="app-link" onClick={() => usePersistence.setState({ notice: null })} aria-label="Dismiss">✕</button>
+          {notice} <button className="app-link" onClick={() => usePersistence.setState({ notice: null })} aria-label="Dismiss" title="Dismiss"><X size={14} /></button>
         </div>
       )}
     </div>
@@ -47,15 +50,20 @@ export function App() {
 
 function AppShell() {
   const hydrated = useStore((s) => s.hydrated);
+  const ready = useFloorPlans((f) => f.ready);
+  const planOpen = useFloorPlans((f) => f.activeId !== null);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (handleShortcut(e, useStore.getState())) e.preventDefault(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (useFloorPlans.getState().activeId !== null && handleShortcut(e, useStore.getState())) e.preventDefault();
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  if (!hydrated) {
-    return <div className="app-splash" data-testid="splash"><span className="app-splash-icon" aria-hidden>🏠</span>Room Planner<small>Unpacking your rooms…</small></div>;
+  if (!hydrated || !ready) {
+    return <div className="app-splash" data-testid="splash"><span className="app-mark" aria-hidden><House size={22} /></span>Room Planner<small>Loading your floor plans…</small></div>;
   }
+  if (!planOpen) return <div className="app"><PersistenceBanner /><HomeScreen /></div>;
   return (
     <div className="app" data-testid="app">
       <Toolbar />

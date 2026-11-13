@@ -2,6 +2,7 @@ import { useState, type DragEvent } from 'react';
 import { useStore } from '../store/store';
 import { addPlanImage } from './planImage';
 import { PickImage } from './TracePanel';
+import { Map as MapIcon } from 'lucide-react';
 
 const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files');
 
@@ -30,10 +31,10 @@ export function PlanDropZone({ over, error, onError }: { over: boolean; error: s
   return (
     <div className={`fp-drop${over ? ' over' : ''}`} data-testid="floorplan-dropzone">
       <div className="fp-drop-card">
-        <span className="fp-drop-icon" aria-hidden>🗺️</span>
+        <span className="fp-drop-icon" aria-hidden><MapIcon size={32} strokeWidth={1.5} /></span>
         <strong>Drop your floor-plan image here</strong>
         <span>a screenshot or photo of the plan (PNG or JPG)</span>
-        <PickImage label="📁 or choose a file…" primary testId="floorplan-dropzone-file" onError={onError} />
+        <PickImage label="or choose a file…" primary testId="floorplan-dropzone-file" onError={onError} />
         {error && <div className="note error" role="alert">{error}</div>}
       </div>
     </div>

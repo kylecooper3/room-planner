@@ -3,7 +3,10 @@ import { deflateSync, crc32 } from 'node:zlib';
 import type { AppState, Vec2 } from '../src/types';
 
 declare global {
-  interface Window { __store: { getState(): AppState; setState(p: Partial<AppState>): void } }
+  interface Window {
+    __store: { getState(): AppState; setState(p: Partial<AppState>): void };
+    __floorPlans: { getState(): { plans: { id: string; name: string; roomCount: number }[]; activeId: string | null; ready: boolean } };
+  }
 }
 
 /**
@@ -40,10 +43,25 @@ export const activeItems = async (page: Page) => {
   return r.layouts.find((l) => l.id === r.activeLayoutId)!.items;
 };
 
-/** Fresh app (IndexedDB is per-context, so every test starts empty). */
+export const floorPlans = (page: Page) => page.evaluate(() => {
+  const f = window.__floorPlans.getState();
+  return { plans: f.plans.map((p) => ({ id: p.id, name: p.name, roomCount: p.roomCount })), activeId: f.activeId };
+});
+
+/** Fresh app (IndexedDB is per-context, so every test starts empty): the home screen, then a new blank floor plan. */
 export async function open(page: Page) {
   await page.goto('/');
+  await expect(page.getByTestId('home-empty')).toBeVisible();
+  await page.getByTestId('home-new-blank-empty').click();
   await expect(page.getByTestId('app')).toBeVisible();
+}
+
+/** Clicks a display toggle (grid, snapping, clearances, cutaway, walk) in the tool rail's Display menu, then closes it. */
+export async function displayToggle(page: Page, testId: string) {
+  if (!(await page.getByTestId(testId).isVisible())) await page.getByTestId('display-menu').click();
+  await page.getByTestId(testId).click();
+  await page.getByTestId('display-menu').click(); // closes it (Esc would go to walk mode once that has the focus)
+  await expect(page.getByTestId(testId)).toHaveCount(0);
 }
 export async function loadDemo(page: Page) {
   await open(page);
