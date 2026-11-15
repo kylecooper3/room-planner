@@ -32,6 +32,15 @@ describe('rooms', () => {
     expect(s().addRoom({ points: sq(), name: 'X' }) && room().name).toBe('X');
   });
 
+  test('room names stay unique on every rename ("Bedroom 2"); renaming to its own name keeps it', () => {
+    const a = s().addRoom({ points: sq() }), b = s().addRoom({ points: sq() }), c = s().addRoom({ points: sq() });
+    s().updateRoom(a, { name: 'Bedroom' });
+    s().updateRoom(b, { name: 'Bedroom' });
+    s().updateRoom(c, { name: 'Bedroom' });
+    s().updateRoom(a, { name: 'Bedroom' });
+    expect(s().project.rooms.map((r) => r.name)).toEqual(['Bedroom', 'Bedroom 2', 'Bedroom 3']);
+  });
+
   test('updateRoom points drops and clamps openings', () => {
     s().addRoom({ points: sq(400) });
     s().addOpening({ kind: 'door', wall: 3, offset: 300, width: 80, height: 200, sill: 0 });
@@ -196,4 +205,84 @@ test('underlay', () => {
   s().setUnderlay({ imageId: 'i', widthPx: 1, heightPx: 1, cmPerPx: 1, x: 0, y: 0, opacity: 0.5, visible: true });
   s().updateUnderlay({ opacity: 0.2 });
   expect(s().project.underlay?.opacity).toBe(0.2);
+});
+
+describe('plan / room level', () => {
+  test('enterRoom and leaveRoom switch level without an undo step', () => {
+    const a = s().addRoom({ points: sq() });
+    const b = s().addRoom({ points: sq() });
+    const before = s().canUndo;
+    s().select({ type: 'corner', index: 0 });
+    s().setUI({ tool: 'draw-room' });
+    s().enterRoom(a);
+    expect(s().project.activeRoomId).toBe(a);
+    expect(s().ui).toMatchObject({ roomOpen: true, selection: null, tool: 'select' });
+    expect(s().canUndo).toBe(before);
+    s().undo();
+    expect(s().ui.roomOpen).toBe(true); // undoing the addRoom of b does not move us out of a
+    expect(s().project.activeRoomId).toBe(a);
+    s().redo();
+    expect(s().project.activeRoomId).toBe(a);
+    s().leaveRoom();
+    expect(s().ui.roomOpen).toBe(false);
+    expect(s().project.activeRoomId).toBe(a);
+    s().enterRoom('nope');
+    expect(s().ui.roomOpen).toBe(false);
+    expect(b).toBeTruthy();
+  });
+
+  test('deleting the open room drops to plan level; other rooms do not', () => {
+    const a = s().addRoom({ points: sq() });
+    const b = s().addRoom({ points: sq() });
+    s().enterRoom(b);
+    s().deleteRoom(a);
+    expect(s().ui.roomOpen).toBe(true);
+    s().deleteRoom(b);
+    expect(s().ui.roomOpen).toBe(false);
+  });
+
+  test('undo of the addRoom that created the open room drops to plan level', () => {
+    const a = s().addRoom({ points: sq() });
+    s().enterRoom(a);
+    s().undo();
+    expect(s().ui.roomOpen).toBe(false);
+  });
+
+  test('addRoom at plan level stays at plan level; replaceProject resets', () => {
+    s().addRoom({ points: sq() });
+    expect(s().ui.roomOpen).toBe(false);
+    s().enterRoom(room().id);
+    s().replaceProject(buildDemoProject());
+    expect(s().ui.roomOpen).toBe(false);
+    s().enterRoom(room().id);
+    s().newProject();
+    expect(s().ui.roomOpen).toBe(false);
+  });
+
+  test('namingRoomId clears when its room is deleted or undone, the level changes, or the project is replaced', () => {
+    const a = s().addRoom({ points: sq() });
+    const name = () => s().setUI({ namingRoomId: a });
+    name();
+    s().updateRoom(a, { name: 'Kitchen' });
+    expect(s().ui.namingRoomId).toBe(a);
+    s().deleteRoom(a);
+    expect(s().ui.namingRoomId).toBeNull();
+    s().undo();
+    name();
+    s().undo(); // the rename
+    expect(s().ui.namingRoomId).toBe(a);
+    s().undo(); // the addRoom
+    expect(s().ui.namingRoomId).toBeNull();
+    s().redo();
+    name();
+    s().enterRoom(a);
+    expect(s().ui.namingRoomId).toBeNull();
+    s().leaveRoom();
+    name();
+    s().leaveRoom();
+    expect(s().ui.namingRoomId).toBeNull();
+    name();
+    s().replaceProject(buildDemoProject());
+    expect(s().ui.namingRoomId).toBeNull();
+  });
 });

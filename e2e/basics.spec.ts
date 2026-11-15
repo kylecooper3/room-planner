@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs';
-import { activeItems, activeRoom, dragPlan, expect, expectCanvasRendered, loadDemo, open, state, test } from './fixtures';
+import { activeItems, activeRoom, dragPlan, enterRoom, expect, expectCanvasRendered, loadDemo, open, state, test } from './fixtures';
 
 const SHOTS = 'docs/screenshots';
 mkdirSync(SHOTS, { recursive: true });
@@ -32,6 +32,7 @@ test('room by dimensions, bed snaps flush to a wall, units toggle is display-onl
   await page.getByTestId('room-length').fill('12');
   await page.getByTestId('room-height').fill('8');
   await page.getByTestId('room-create').click();
+  await enterRoom(page);
   const room = await activeRoom(page);
   const xs = room.points.map((p) => p.x), ys = room.points.map((p) => p.y);
   expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(304.8, 6);

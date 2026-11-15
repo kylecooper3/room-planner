@@ -236,6 +236,10 @@ export interface UIState {
   dialog: DialogName;
   /** When dialog === 'item-creator': the user ItemDef being edited, or null to create from a photo. */
   editingDefId: string | null;
+  /** True at room level (inside project.activeRoomId); false at plan level. Never saved, never in undo. */
+  roomOpen: boolean;
+  /** Room just drawn whose name popover is open on the plan, or null. Never saved, never in undo; cleared when the room goes. */
+  namingRoomId: string | null;
 }
 
 // ───────────────────────── store ─────────────────────────
@@ -259,6 +263,12 @@ export interface Actions {
   updateRoom(roomId: string, patch: Partial<Omit<Room, 'id' | 'layouts' | 'openings'>>): void;
   deleteRoom(roomId: string): void;
   setActiveRoom(roomId: string): void;
+  /** Goes to room level inside `roomId` (no undo step). Clears selection, tool -> select. */
+  enterRoom(roomId: string): void;
+  /** Plan level: makes `roomId` the highlighted room (no undo step, stays at plan level). Clears selection. */
+  focusRoom(roomId: string): void;
+  /** Back to plan level. Clears selection, tool -> select. */
+  leaveRoom(): void;
 
   addOpening(o: Omit<Opening, 'id'>): string;
   updateOpening(id: string, patch: Partial<Omit<Opening, 'id'>>): void;
@@ -344,8 +354,6 @@ export type PolygonsIntersect = (a: Polygon, b: Polygon) => boolean;
 export type PolygonInsideRoom = (poly: Polygon, roomPoints: Vec2[]) => boolean;
 /** Nearest point on any wall: used to place/drag openings. */
 export type ProjectOnWalls = (points: Vec2[], p: Vec2) => { wall: number; offset: Cm; distance: Cm; point: Vec2 };
-/** Snaps p so prev->p is axis-aligned (0/90/180/270) — right-angle drawing. */
-export type SnapRightAngle = (prev: Vec2, p: Vec2) => Vec2;
 export interface WallDistance {
   /** Midpoint of the item side the measurement starts from, and where it hits the wall. */
   from: Vec2;

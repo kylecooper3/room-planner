@@ -1,4 +1,4 @@
-import { CircleCheck, Copy, DoorOpen, Move, RotateCw, Scissors, SquareDashed, SquareSplitHorizontal, Sofa, Spline, Trash, TriangleAlert } from 'lucide-react';
+import { ChevronRight, CircleCheck, Copy, DoorOpen, Move, RotateCw, Scissors, SquareDashed, SquareSplitHorizontal, Sofa, Spline, Trash, TriangleAlert } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { formatArea, formatLength } from '../core/units';
 import { polygonArea } from '../core/geometry';
@@ -201,11 +201,18 @@ function WallPanel({ room, index, units }: { room: Room; index: number; units: U
 function RoomPanel({ room, units }: { room: Room; units: UnitSystem }) {
   const issues = useIssues();
   const update = (patch: Parameters<ReturnType<typeof s>['updateRoom']>[1]) => s().updateRoom(room.id, patch);
+  const naming = useStore((st) => st.ui.namingRoomId === room.id); // named in the popover on the plan meanwhile
+  const planLevel = useStore((st) => !st.ui.roomOpen);
   return (
     <>
       <Head kind="Room" icon={<SquareDashed size={13} />} title={room.name} sub={`${formatArea(polygonArea(room.points), units)} · ${room.points.length} walls`} />
+      {planLevel && (
+        <button type="button" className="btn primary app-open-room" data-testid="inspector-open-room" onClick={() => s().enterRoom(room.id)}>
+          Open room<ChevronRight size={15} aria-hidden />
+        </button>
+      )}
       <Section title="Details">
-      <TextInput label="Name" value={room.name} testId="room-name" onCommit={(name) => update({ name })} />
+      {!naming && <TextInput label="Name" value={room.name} testId="room-name" onCommit={(name) => update({ name })} />}
       <LengthInput label="Ceiling height" value={room.ceilingHeight} units={units} testId="room-ceiling" onCommit={(ceilingHeight) => update({ ceilingHeight })} />
       <div className="app-row">
         <ColorPicker label="Wall colour" value={room.wallColor} testId="wall-color" onChange={(wallColor) => update({ wallColor })}

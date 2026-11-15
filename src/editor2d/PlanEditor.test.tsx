@@ -39,10 +39,10 @@ vi.mock('../core/geometry', () => ({
   doorSwingPolygon: () => null,
   polygonCentroid: (p: { x: number; y: number }[]) => ({ x: p.reduce((a, q) => a + q.x, 0) / p.length, y: p.reduce((a, q) => a + q.y, 0) / p.length }),
   polygonArea: () => 120000,
+  wallNearMisses: () => [],
   clearancePolygon: () => [],
   clipToConvex: (_room: unknown, zone: unknown) => zone,
   projectOnWalls: () => ({ wall: 0, offset: 0, distance: 0, point: { x: 0, y: 0 } }),
-  snapRightAngle: (_a: unknown, p: unknown) => p,
   distancesToWalls: () => [],
   snapItem: ({ pose }: { pose: { x: number; y: number } }) => ({ x: pose.x, y: pose.y, guides: [] }),
 }));
@@ -81,13 +81,13 @@ describe('PlanEditor', () => {
     expect(host.querySelector('[data-testid="rotate-handle"]')).not.toBeNull();
   });
 
-  it('shows other rooms dimmed with their name; clicking one activates it; clicking a wall selects it', () => {
+  it('room level: other rooms are greyed with their name and not clickable; clicking a wall selects it', () => {
     const neighbour: Room = { ...room, id: 'r2', name: 'Kitchen', points: room.points.map((p) => ({ x: p.x + 500, y: p.y })), openings: [] };
-    const setActiveRoom = vi.fn(), select = vi.fn();
+    const setActiveRoom = vi.fn(), enterRoom = vi.fn(), select = vi.fn();
     useStore.setState({
-      select, setActiveRoom,
+      select, setActiveRoom, enterRoom,
       project: { ...useStore.getState().project, rooms: [room, neighbour], activeRoomId: 'r1' },
-      ui: { ...useStore.getState().ui, selection: null, tool: 'select' },
+      ui: { ...useStore.getState().ui, selection: null, tool: 'select', roomOpen: true },
     });
     const host = document.createElement('div');
     document.body.appendChild(host);
@@ -97,8 +97,11 @@ describe('PlanEditor', () => {
     expect(host.querySelectorAll('[data-testid="plan-wall"]')).toHaveLength(4); // only the active room's walls are editable
     const labels = [...host.querySelectorAll('[data-testid="plan-room-label"]')].map((l) => l.textContent);
     expect(labels).toEqual(expect.arrayContaining([expect.stringContaining('Kitchen'), expect.stringContaining('Bedroom')]));
+    expect(other.getAttribute('pointer-events')).toBe('none');
     act(() => { other.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 })); });
-    expect(setActiveRoom).toHaveBeenCalledWith('r2');
+    act(() => { other.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, button: 0 })); });
+    expect(setActiveRoom).not.toHaveBeenCalled();
+    expect(enterRoom).not.toHaveBeenCalled();
     const wall = host.querySelectorAll('[data-testid="plan-wall"] polygon')[2];
     act(() => { wall.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 })); });
     expect(select).toHaveBeenCalledWith({ type: 'wall', index: 2 });
@@ -112,7 +115,9 @@ describe('PlanEditor', () => {
     document.body.appendChild(host);
     act(() => { root = createRoot(host); root.render(<PlanEditor />); });
     expect(host.querySelector('[data-testid="draw-hint"]')?.textContent).toContain('Click the first corner');
-    expect((host.querySelector('[data-testid="draw-finish"]') as HTMLButtonElement).disabled).toBe(true);
+    // No outline yet: only Done; Undo point / Finish room appear once a corner is placed.
+    expect(host.querySelector('[data-testid="draw-done"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="draw-finish"]')).toBeNull();
     act(() => { useStore.setState({ ui: { ...useStore.getState().ui, tool: 'select' } }); });
   });
 

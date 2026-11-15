@@ -3,7 +3,7 @@ import type { Opening, Vec2 } from '../types';
 import {
   clearancePolygon, clipToConvex, distancesToWalls, doorSwingPolygon, getOpeningGeometry, itemPolygon, localToPlan, pointInPolygon,
   polygonArea, polygonCentroid, polygonInsideRoom, polygonsIntersect, projectOnWalls, rectRoomPoints, snapItem,
-  snapRightAngle, wallSegments,
+  wallNearMisses, wallSegments,
 } from './geometry';
 
 const near = (p: Vec2, q: Vec2) => { expect(p.x).toBeCloseTo(q.x, 6); expect(p.y).toBeCloseTo(q.y, 6); };
@@ -108,13 +108,11 @@ describe('intersection tests', () => {
   });
 });
 
-test('projectOnWalls and snapRightAngle', () => {
+test('projectOnWalls', () => {
   const r = projectOnWalls(rect, { x: 100, y: 10 });
   expect(r.wall).toBe(0); expect(r.offset).toBeCloseTo(100); expect(r.distance).toBeCloseTo(10); near(r.point, { x: 100, y: 0 });
   const s = projectOnWalls(rect, { x: 295, y: 150 });
   expect(s.wall).toBe(1); expect(s.offset).toBeCloseTo(150); expect(s.distance).toBeCloseTo(5);
-  expect(snapRightAngle({ x: 0, y: 0 }, { x: 10, y: 3 })).toEqual({ x: 10, y: 0 });
-  expect(snapRightAngle({ x: 0, y: 0 }, { x: 2, y: -9 })).toEqual({ x: 0, y: -9 });
 });
 
 test('distancesToWalls for a centred item', () => {
@@ -159,5 +157,37 @@ describe('clipToConvex', () => {
   });
   test('zone fully outside the room → empty', () => {
     expect(clipToConvex(L, [{ x: 500, y: 0 }, { x: 600, y: 0 }, { x: 600, y: 100 }, { x: 500, y: 100 }])).toEqual([]);
+  });
+});
+
+describe('wallNearMisses', () => {
+  // Axis-aligned rooms with 10 cm walls: the outer face is the outline pushed 10 cm out.
+  const box = (x0: number, y0: number, x1: number, y1: number, t = 10) => ({
+    inner: [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }],
+    outer: [{ x: x0 - t, y: y0 - t }, { x: x1 + t, y: y0 - t }, { x: x1 + t, y: y1 + t }, { x: x0 - t, y: y1 + t }],
+  });
+  const a = box(0, 0, 400, 300); // outer face on the right at x = 410
+  test("a room drawn on the neighbour's outer face (or within 0.5 cm of it) is attached: nothing to mark", () => {
+    expect(wallNearMisses([a, box(410, 0, 600, 300)])).toEqual([]);
+    expect(wallNearMisses([a, box(410.4, 0, 600, 300)])).toEqual([]);
+  });
+  test('a gap of 2..40 cm is marked along the stretch the walls share', () => {
+    const m = wallNearMisses([a, box(425, 100, 600, 500)]);
+    expect(m).toHaveLength(1);
+    expect(m[0]).toMatchObject({ kind: 'gap', distance: 15 });
+    // Equal walls: from the first room's line (x = 400) to the second room's face (x = 415), where both walls run.
+    near(m[0].from.a, { x: 400, y: 300 }); near(m[0].from.b, { x: 400, y: 90 });
+    near(m[0].to.a, { x: 415, y: 300 }); near(m[0].to.b, { x: 415, y: 90 });
+    expect(wallNearMisses([a, box(411, 0, 600, 300)])).toEqual([]); // under 2 cm
+    expect(wallNearMisses([a, box(460, 0, 600, 300)])).toEqual([]); // over 40 cm: just apart
+  });
+  test('a wall pushed into the neighbour is an overlap', () => {
+    expect(wallNearMisses([a, box(405, 0, 600, 300)])).toEqual([expect.objectContaining({ kind: 'overlap', distance: 5 })]);
+  });
+  test('walls that are not parallel, or do not face each other, are not compared', () => {
+    const tilted = { inner: [{ x: 420, y: 0 }, { x: 600, y: 0 }, { x: 600, y: 300 }, { x: 440, y: 300 }], outer: [] as Vec2[] };
+    tilted.outer = tilted.inner.map((p) => ({ x: p.x + (p.x < 500 ? -10 : 10), y: p.y + (p.y < 100 ? -10 : 10) }));
+    expect(wallNearMisses([a, tilted])).toEqual([]);
+    expect(wallNearMisses([a, box(420, -5, 600, 300)]).every((m) => m.from.a.x === m.from.b.x)).toBe(true); // tops are parallel, same way
   });
 });

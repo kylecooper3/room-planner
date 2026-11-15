@@ -6,6 +6,8 @@
 /* draw-room aids: one floating bar (hint + Undo / Cancel / Finish) bottom left beside the zoom bar, and the magnifier loupe.
    The bar's wrapper spans the pane bottom as a size container (click-through): in a narrow pane the bar moves up above
    the zoom bar instead of wrapping its buttons; only in a very narrow one do the buttons drop their labels. */
+/* Plan level: "Open" under the highlighted room's label (centred on it). */
+.pe-open-room { position: absolute; z-index: 3; transform: translateX(-50%); height: 28px; padding: 0 8px 0 12px; gap: 2px; }
 .pe-drawbar { position: absolute; left: var(--sp-3); right: var(--sp-3); bottom: var(--sp-3); z-index: 4; container-type: inline-size; pointer-events: none; }
 .pe-drawbar-in {
   pointer-events: auto; width: fit-content; max-width: min(600px, calc(100% - 116px)); box-sizing: border-box;
@@ -29,3 +31,9 @@
   box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--border-strong), var(--shadow); pointer-events: none;
 }
 .pe-loupe svg { display: block; }
+
+/* name popover for the room just drawn: a menu-style card on the plan */
+.pe-name-pop { top: 0; width: 220px; z-index: 5; transform: translateX(-50%); }
+.pe-name-pop .field { padding: 0 var(--sp-1) var(--sp-1); }
+.pe-name-pop [role='listbox'] { display: flex; flex-direction: column; gap: 1px; max-height: 182px; overflow-y: auto; } /* ~5½ rows: clears the draw bar */
+.pe-name-pop [role='option'][aria-selected='true'] { background: var(--accent-soft); color: var(--accent); }

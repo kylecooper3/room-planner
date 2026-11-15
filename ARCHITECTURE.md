@@ -33,10 +33,13 @@ Project { units, rooms[], activeRoomId, library[] (My stuff: shared list `room-p
   Room { points[], ceilingHeight, wallThickness, openings[], wallColor, floor, layouts[], activeLayoutId }
     Layout { name, items: PlacedItem[] }       PlacedItem { defId, x, y, rotation }
 ItemDef { name, size{w,d,h}, model: ItemModel, clearances[], source, photoId? }   // presets live in code, user defs in project.library
-UIState { view, tool, selection, toggles, dialog, ... }                            // never in undo history, never persisted
+UIState { view, tool, selection, toggles, dialog, roomOpen, ... }                            // never in undo history, never persisted
 ```
 - Project state is immutable; every mutating action produces a new `project` and pushes one undo snapshot
   (`beginBatch/endBatch` collapse a drag into one step). History is capped (100).
+- Navigation: `ui.roomOpen` picks the level inside a plan. false = plan level (rooms list, walls, click a room to enter), true =
+  room level inside `project.activeRoomId` (furniture, layouts; other rooms greyed). `enterRoom`/`leaveRoom` add no undo
+  step; the store drops back to plan level whenever the open room stops existing (delete, undo, redo, import, open).
 - Binary data (photos, floor-plan image) is **not** in the project JSON; it lives in the blob store (IndexedDB) and is
   referenced by id (`ItemDef.photoId`, `Underlay.imageId`).
 

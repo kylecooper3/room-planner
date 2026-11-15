@@ -1,29 +1,18 @@
-import { useEffect, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
+import { useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 import { useStore } from '../store/store';
 import { formatArea } from '../core/units';
 import { polygonArea } from '../core/geometry';
-import type { OpeningKind, Room } from '../types';
+import type { OpeningKind } from '../types';
 import { addPlanImage } from './planImage';
-import { RenameInput } from '../app/inputs';
 import {
   countsTowardArea, derivedStep, freshSession, isCalibrated, parseArea, scaleToArea, scaleWords, useTrace,
 } from './traceSession';
 import {
-  AppWindow, ArrowRight, Check, DoorOpen, PanelLeftClose, PanelLeftOpen, Pencil, PenLine, Ruler, SquareSplitHorizontal, Trash2, X,
+  AppWindow, ArrowRight, Check, DoorOpen, PanelLeftClose, PanelLeftOpen, PenLine, Ruler, SquareSplitHorizontal, Trash2, X,
 } from 'lucide-react';
 import './fp-floorplan.css';
 
 const s = useStore.getState;
-const NAMES = ['Bedroom', 'Bathroom', 'Kitchen', 'Living room', 'Closet', 'Hallway', 'Balcony'];
-
-/** "Bedroom", or "Bedroom 2" when that name is taken by another room. */
-function uniqueName(name: string, rooms: Room[], self: string) {
-  const taken = new Set(rooms.filter((r) => r.id !== self).map((r) => r.name));
-  if (!taken.has(name)) return name;
-  let i = 2;
-  while (taken.has(`${name} ${i}`)) i++;
-  return `${name} ${i}`;
-}
 
 /** File input styled as a button. */
 export function PickImage({ label, primary, icon, testId = 'floorplan-file', onError }: {
@@ -55,32 +44,6 @@ function Step({ n, title, done, current, children }: { n: number; title: string;
   );
 }
 
-function NameRoom({ room, rooms, onNext, onDone }: { room: Room; rooms: Room[]; onNext(): void; onDone(): void }) {
-  const [text, setText] = useState('');
-  useEffect(() => setText(''), [room.id]);
-  const rename = (name: string) => { if (name.trim()) s().updateRoom(room.id, { name: uniqueName(name.trim(), rooms, room.id) }); };
-  const commit = () => { if (text.trim()) rename(text); };
-  return (
-    <div className="fp-naming" data-testid="floorplan-naming">
-      <p className="fp-lead">Room traced ({formatArea(polygonArea(room.points), s().project.units)}). What is it?</p>
-      <div className="fp-chips">
-        {NAMES.map((n) => (
-          <button key={n} type="button" className={`app-pill${room.name.startsWith(n) ? ' active' : ''}`} data-testid="floorplan-name-chip" onClick={() => rename(n)}>{n}</button>
-        ))}
-        <button type="button" className="app-pill" onClick={() => document.querySelector<HTMLInputElement>('[data-testid="floorplan-room-name"]')?.focus()}>Other…</button>
-      </div>
-      <div className="field">
-        <input data-testid="floorplan-room-name" aria-label="Room name" placeholder={`Or type a name (now “${room.name}”)`} value={text}
-          onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') commit(); }} />
-      </div>
-      <div className="fp-row">
-        <button type="button" className="btn primary" data-testid="floorplan-trace-next" onClick={() => { commit(); onNext(); }}><PenLine size={15} aria-hidden />Trace next room</button>
-        <button type="button" className="btn" data-testid="floorplan-done-tracing" onClick={() => { commit(); onDone(); }}>Done tracing</button>
-      </div>
-    </div>
-  );
-}
-
 /** Docked, non-modal "Trace floor plan" panel (shown while ui.dialog === 'floorplan'): numbered steps from image to finished rooms. */
 export function TracePanel() {
   const project = useStore((st) => st.project);
@@ -89,7 +52,6 @@ export function TracePanel() {
   const view = useStore((st) => st.ui.view);
   const t = useTrace();
   const [error, setError] = useState('');
-  const [renaming, setRenaming] = useState<string | null>(null);
   const [areaText, setAreaText] = useState(() => (t.knownArea ? formatArea(t.knownArea, project.units) : ''));
   const [areaOpen, setAreaOpen] = useState(false);
   const { underlay: u, units, rooms } = project;
@@ -98,11 +60,9 @@ export function TracePanel() {
   const step = t.step ?? derivedStep(project, t);
   const scaleDone = !!u && (isCalibrated(u) || t.skipScale || t.knownArea !== null);
   const done = [!!u, scaleDone, rooms.length > 0, rooms.some((r) => r.openings.length > 0), false];
-  const naming = rooms.find((r) => r.id === t.namingId);
   const go = (n: number) => useTrace.setState({ step: n });
-  const trace = () => { useTrace.setState({ namingId: null, step: 3 }); s().setUI({ tool: 'draw-room', view: planView }); };
-  const doneTracing = () => { useTrace.setState({ namingId: null, step: 4 }); s().setUI({ tool: 'select' }); };
-  const close = () => s().setUI({ dialog: 'none', tool: 'select' });
+  const trace = () => { useTrace.setState({ step: 3 }); s().setUI({ tool: 'draw-room', view: planView }); };
+  const close = () => s().setUI({ dialog: 'none', tool: 'select', namingRoomId: null });
 
   if (t.collapsed) {
     return (
@@ -217,46 +177,24 @@ export function TracePanel() {
 
         <Step n={3} title="Trace rooms" done={done[2]} current={step === 3}>
           <p>One room at a time: click each inside corner on the plan. Corners snap to the plan’s walls and to rooms you already traced.</p>
-          {naming ? (
-            <NameRoom room={naming} rooms={rooms} onNext={trace} onDone={doneTracing} />
-          ) : tool === 'draw-room' ? (
-            <p className="note" data-testid="floorplan-tracing">Tracing… follow the hint on the plan.</p>
+          {tool === 'draw-room' ? (
+            <p className="note" data-testid="floorplan-tracing">Tracing… name each room as you close it; press Done on the plan when you have them all.</p>
           ) : (
             <div className="fp-row">
-              <button type="button" className="btn primary" data-testid="floorplan-trace" onClick={trace}><PenLine size={15} aria-hidden />{rooms.length ? 'Trace next room' : 'Trace a room'}</button>
-              {rooms.length > 0 && <button type="button" className="btn" data-testid="floorplan-done-tracing" onClick={doneTracing}>Done tracing<ArrowRight size={15} aria-hidden /></button>}
+              <button type="button" className="btn primary" data-testid="floorplan-trace" onClick={trace}><PenLine size={15} aria-hidden />Trace rooms</button>
             </div>
           )}
-          {rooms.length > 0 && (
+          {/* Rooms are selected, renamed and deleted in the sidebar; here only: which ones count toward the listed area. */}
+          {t.knownArea !== null && rooms.length > 0 && (
             <ul className="fp-rooms">
               {rooms.map((r) => (
-                <li key={r.id} data-testid="floorplan-room-row" className={`app-room-row${r.id === project.activeRoomId ? ' active' : ''}`}>
-                  {t.knownArea !== null && (
-                    <input type="checkbox" className="fp-count" title="Counts toward the listed area" aria-label={`${r.name} counts toward the listed area`}
-                      data-testid="floorplan-room-counted" checked={countsTowardArea(r, t.counted)}
+                <li key={r.id} data-testid="floorplan-room-row">
+                  <label className="fp-check">
+                    <input type="checkbox" className="fp-count" data-testid="floorplan-room-counted" checked={countsTowardArea(r, t.counted)}
                       onChange={(e) => useTrace.setState({ counted: { ...t.counted, [r.id]: e.target.checked } })} />
-                  )}
-                  {renaming === r.id ? (
-                    <RenameInput label="Room name" value={r.name} onDone={(name) => {
-                      setRenaming(null);
-                      if (name) s().updateRoom(r.id, { name: uniqueName(name, rooms, r.id) });
-                    }} />
-                  ) : (
-                  <>
-                  <button type="button" className="app-room-main" title="Make this the active room (double-click to rename)"
-                    onClick={() => s().setActiveRoom(r.id)} onDoubleClick={() => setRenaming(r.id)}>
                     <span className="app-row-name">{r.name}</span>
                     <span className="app-row-meta">{formatArea(polygonArea(r.points), units)}</span>
-                  </button>
-                  <span className="app-row-actions">
-                    <button type="button" className="btn ghost icon app-small" aria-label={`Rename ${r.name}`} title="Rename this room" data-testid="floorplan-room-rename"
-                      onClick={() => setRenaming(r.id)}><Pencil size={15} aria-hidden /></button>
-                    <button type="button" className="btn ghost icon app-small danger" aria-label={`Delete ${r.name}`} title="Delete this room (undo with Ctrl+Z)" onClick={() => s().deleteRoom(r.id)}>
-                      <Trash2 size={15} aria-hidden />
-                    </button>
-                  </span>
-                  </>
-                  )}
+                  </label>
                 </li>
               ))}
             </ul>

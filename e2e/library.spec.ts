@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, floorPlans, state, test } from './fixtures';
+import { enterRoom, expect, floorPlans, state, test } from './fixtures';
 
 const card = (page: Page, name: string) => page.getByTestId('plan-card').filter({ has: page.getByTestId('plan-card-name').getByText(name, { exact: true }) });
 const roomNames = async (page: Page) => (await state(page)).project.rooms.map((r) => r.name);
@@ -112,9 +112,12 @@ test('"My stuff" is shared by every floor plan, and survives a reload', async ({
   await page.getByTestId('room-width').fill('10');
   await page.getByTestId('room-length').fill('10');
   await page.getByTestId('room-create').click();
+  await enterRoom(page);
   await page.getByTestId('tab-my-stuff').click();
   await expect(page.getByTestId('my-item')).toHaveText(/Grandma armchair/);
-  await page.reload();
+  await page.waitForTimeout(1000); // autosave is debounced
+  await page.reload(); // reopening a plan lands at plan level
+  await enterRoom(page);
   await page.getByTestId('tab-my-stuff').click();
   await expect(page.getByTestId('my-item')).toHaveText(/Grandma armchair/);
 });
@@ -122,6 +125,7 @@ test('"My stuff" is shared by every floor plan, and survives a reload', async ({
 test('doors, windows and fixtures live in the Furniture tab: search, collapse, pick then click a wall', async ({ page }) => {
   await page.goto('/');
   await page.getByTestId('home-demo').click();
+  await enterRoom(page);
   await expect(page.getByTestId('tool-door')).toBeVisible();
   await page.getByTestId('lib-search').fill('radiator');
   await expect(page.getByTestId('tool-radiator')).toBeVisible();

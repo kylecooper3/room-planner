@@ -2,14 +2,14 @@ import type { ReactNode } from 'react';
 import { useStore } from '../store/store';
 import { useBlobUrl } from '../store/blobs';
 import type { Vec2 } from '../types';
-import { Check, Undo2, X } from 'lucide-react';
+import { Check, Undo2 } from 'lucide-react';
 import { THEME } from '../theme';
 
-/** Floating bar shown while the draw-room tool is active: the hint, then Undo point / Cancel / Finish room. */
-export function DrawHud({ count, free, canFinish, measure, onUndo, onFinish, onCancel }: {
-  count: number; free: boolean; canFinish: boolean; measure: string | null; onUndo(): void; onFinish(): void; onCancel(): void;
+/** Floating bar shown while the draw-room tool is active: the hint, then Done (no outline yet) or Undo point / Finish room. `next`: rooms already exist. */
+export function DrawHud({ count, next, free, canFinish, measure, onUndo, onFinish, onDone }: {
+  count: number; next: boolean; free: boolean; canFinish: boolean; measure: string | null; onUndo(): void; onFinish(): void; onDone(): void;
 }) {
-  const hint = count === 0 ? 'Click the first corner of the room'
+  const hint = count === 0 ? `Click the first corner of the ${next ? 'next ' : ''}room`
     : count < 3 ? 'Click the next corner — snaps when close (hold Alt for no snapping)'
       : 'Click the green circle or press Enter to finish';
   return (
@@ -21,9 +21,15 @@ export function DrawHud({ count, free, canFinish, measure, onUndo, onFinish, onC
           {free && <small data-testid="draw-snap-off">Snapping off</small>}
         </div>
         <div className="pe-drawbar-actions" data-testid="draw-hud">
-          <button type="button" className="btn ghost" data-testid="draw-undo" disabled={!count} title="Undo the last point (Backspace)" onClick={onUndo}><Undo2 size={16} aria-hidden /><span className="pe-drawbar-label">Undo point</span></button>
-          <button type="button" className="btn ghost" data-testid="draw-cancel" title="Cancel this room (Esc)" onClick={onCancel}><X size={16} aria-hidden /><span className="pe-drawbar-label">Cancel</span></button>
-          <button type="button" className="btn primary" data-testid="draw-finish" disabled={!canFinish} title="Finish the room (Enter, or click the first corner)" onClick={onFinish}><Check size={16} aria-hidden /><span className="pe-drawbar-label">Finish room</span></button>
+          {/* One clear exit at a time: Done between rooms; Undo point / Finish room while an outline is in progress. */}
+          {count === 0 ? (
+            <button type="button" className="btn primary" data-testid="draw-done" title="Stop drawing rooms (Esc)" onClick={onDone}><Check size={16} aria-hidden /><span className="pe-drawbar-label">Done</span></button>
+          ) : (
+            <>
+              <button type="button" className="btn ghost" data-testid="draw-undo" title="Undo the last point (Backspace)" onClick={onUndo}><Undo2 size={16} aria-hidden /><span className="pe-drawbar-label">Undo point</span></button>
+              <button type="button" className="btn primary" data-testid="draw-finish" disabled={!canFinish} title="Finish the room (Enter, or click the first corner)" onClick={onFinish}><Check size={16} aria-hidden /><span className="pe-drawbar-label">Finish room</span></button>
+            </>
+          )}
         </div>
       </div>
     </div>

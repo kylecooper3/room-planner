@@ -64,14 +64,19 @@ The last plan you had open reopens on the next visit.
 ![Floor plans](docs/screenshots/home.png)
 
 ### The editor at a glance
-- **Top bar:** "Floor plans › *plan name*" (click *Floor plans* to go back; click the name to rename the plan), the view
+- **Two levels inside a plan:** the **floor plan** (its rooms; walls editable) and, once you click a room, **that room**
+  (its furniture and layouts; other rooms greyed out). The **‹** back button always goes up one level (room → floor plan →
+  all floor plans).
+- **Top bar:** back button, then "Floor plans › *plan* › *room*" (every crumb takes you there; click the crumb you are on,
+  or double-click a parent, to rename it), the view
   switcher (Plan / 3D / Split / Compare, keys 1-4), undo/redo, the units switch, the **File** menu (new plan, import,
   export `.roomplan`, export PNGs) and help.
-- **Tool rail** (left edge of the canvas, icons with tooltips): Select, Draw room, Trace plan, and at the bottom
+- **Tool rail** (left edge of the canvas, icons with tooltips): Select, Draw room and Trace plan (floor plan level), and at the bottom
   **Display** (eye icon: grid, snapping, clearance zones, cut-away walls, walk mode).
-- **Left sidebar:** the plan's **Rooms** (click one to work on it, double-click or the pencil to rename, bin to delete,
-  **+** next to the heading for the three ways to add one) above the **Furniture** catalogue (searchable; it starts with **Doors, windows & fixtures**) and **My stuff**.
-- **Above the canvas:** the active room's layouts as tabs, **+** for a new one and **⋯** to rename, duplicate or delete it.
+- **Left sidebar:** at floor plan level the plan's **Rooms** (click one, or the room on the canvas, to go into it; double-click
+  or the pencil to rename, bin to delete, **+** next to the heading for the three ways to add one). Inside a room: the
+  **Furniture** catalogue (searchable; it starts with **Doors, windows & fixtures**) and **My stuff**.
+- **Above the canvas** (inside a room): its layouts as tabs, **+** for a new one and **⋯** to rename, duplicate or delete it.
 - **On the canvas:** only controls for that view: zoom and fit (plan, bottom right), Overview / Walk / Top view (3D, top left).
 - **Inspector** (right): details of whatever is selected; with nothing selected, the room's details and its **Fit check**.
 

@@ -52,7 +52,7 @@ test('welcome state offers the three starts and the demo', async () => {
   const loadDemo = vi.fn();
   useStore.setState({ hydrated: true, setUI, loadDemo });
   await render();
-  for (const id of ['start-dimensions', 'start-draw', 'start-floorplan', 'load-demo', 'plan-svg', 'units-toggle', 'tab-my-stuff']) {
+  for (const id of ['start-dimensions', 'start-draw', 'start-floorplan', 'load-demo', 'plan-svg', 'units-toggle', 'rooms-list', 'nav-back']) {
     expect(q(id), id).not.toBeNull();
   }
   await act(async () => q('start-dimensions')!.click());

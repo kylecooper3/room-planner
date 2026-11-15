@@ -180,6 +180,24 @@ describe('floor-plan library', () => {
     expect(await get('room-planner/my-stuff')).toEqual([]);
   });
 
+  test('deleting one of "My stuff" removes it from every plan, so a plan that places it cannot bring it back', async () => {
+    const { createFloorPlan, openFloorPlan, closeFloorPlan, deleteDefEverywhere, putBlob, useStore } = await load();
+    const a = await createFloorPlan({ name: 'A' });
+    const b = await createFloorPlan({ name: 'B' });
+    useStore.getState().addRoom({ points: tri });
+    useStore.getState().saveDef(chair(await putBlob(blob())));
+    useStore.getState().placeItem('u-chair', { x: 10, y: 10 });
+    await openFloorPlan(a); // saves B, which places the chair
+    await deleteDefEverywhere('u-chair');
+    expect(useStore.getState().project.library).toEqual([]);
+    await openFloorPlan(b);
+    const p = useStore.getState().project;
+    expect(p.library).toEqual([]);
+    expect(p.rooms[0].layouts[0].items).toEqual([]);
+    await closeFloorPlan();
+    expect(await get('room-planner/my-stuff')).toEqual([]);
+  });
+
   test('a shared item\'s photo survives deleting the plan it was made in (and the startup sweep)', async () => {
     const first = await load();
     const photo = await first.putBlob(blob());

@@ -1,7 +1,7 @@
 import type {
   ClearancePolygon, DistancesToWalls, DoorSwingPolygon, GetOpeningGeometry, Guide, ItemPolygon, LocalToPlan,
   PointInPolygon, Polygon, PolygonArea, PolygonCentroid, PolygonInsideRoom, PolygonsIntersect, ProjectOnWalls,
-  RectRoomPoints, SnapItem, SnapRightAngle, Vec2, WallDistance, WallSegments,
+  RectRoomPoints, Segment, SnapItem, Vec2, WallDistance, WallSegments,
 } from '../types';
 
 /** Penetration below this is "touching", not intersecting. */
@@ -193,9 +193,6 @@ export const projectOnWalls: ProjectOnWalls = (pts, p) => {
   return best;
 };
 
-export const snapRightAngle: SnapRightAngle = (prev, p) =>
-  Math.abs(p.x - prev.x) >= Math.abs(p.y - prev.y) ? { x: p.x, y: prev.y } : { x: prev.x, y: p.y };
-
 const SIDES = [
   { side: 'front', m: { x: 0, y: 0.5 }, dir: { x: 0, y: 1 } },
   { side: 'back', m: { x: 0, y: -0.5 }, dir: { x: 0, y: -1 } },
@@ -272,4 +269,46 @@ export const snapItem: SnapItem = ({ roomPoints, others, pose, size, threshold }
       : { kind: hit.kind, a: { x: s0, y: hit.line }, b: { x: s1, y: hit.line } });
   }
   return { x: pose.x + dx, y: pose.y + dy, guides };
+};
+
+/** A near-miss between two rooms' walls: `from` on a room's wall line, `to` its projection on the neighbour's outer face. */
+export interface WallNearMiss { kind: 'gap' | 'overlap'; distance: number; from: Segment; to: Segment }
+/** cm: walls this close count as attached; gaps are reported from WALL_GAP_MIN to WALL_GAP_MAX (overlaps up to WALL_GAP_MAX). */
+export const WALL_COINCIDE_TOL = 0.5, WALL_GAP_MIN = 2, WALL_GAP_MAX = 40;
+
+/**
+ * Where a room's wall line (`inner`) runs parallel to, and faces, a neighbour's wall outer face (`outer`, same edge order)
+ * without lying on it: a gap of WALL_GAP_MIN..WALL_GAP_MAX cm, or an overlap into the neighbour. Two walls are attached when
+ * either room's line lies on the other's face (within WALL_COINCIDE_TOL); those, and non-parallel walls, are not reported.
+ */
+export const wallNearMisses = (rooms: { inner: Vec2[]; outer: Vec2[] }[]): WallNearMiss[] => {
+  const out: WallNearMiss[] = [];
+  const cosTol = Math.cos((1 * Math.PI) / 180);
+  // Edge i: start, length, direction and outward normal (s = the room's orientation, as wallOutline).
+  const edge = (poly: Vec2[], i: number, s: number) => {
+    const a = poly[i], b = poly[(i + 1) % poly.length], l = len(sub(b, a));
+    return l < EPS ? null : { a, l, u: { x: (b.x - a.x) / l, y: (b.y - a.y) / l }, n: { x: (s * (b.y - a.y)) / l, y: (-s * (b.x - a.x)) / l } };
+  };
+  type E = NonNullable<ReturnType<typeof edge>>;
+  const dot = (p: Vec2, q: Vec2) => p.x * q.x + p.y * q.y;
+  const at = (e: E, t: number, d = 0) => ({ x: e.a.x + e.u.x * t + e.n.x * d, y: e.a.y + e.u.y * t + e.n.y * d });
+  for (let ai = 0; ai < rooms.length; ai++) for (let bi = ai + 1; bi < rooms.length; bi++) {
+    const A = rooms[ai], B = rooms[bi];
+    if (A.inner.length < 3 || B.inner.length < 3) continue;
+    const sA = signedArea(A.inner) >= 0 ? 1 : -1, sB = signedArea(B.inner) >= 0 ? 1 : -1;
+    for (let i = 0; i < A.inner.length; i++) for (let j = 0; j < B.inner.length; j++) {
+      const lA = edge(A.inner, i, sA), fA = edge(A.outer, i, sA), lB = edge(B.inner, j, sB), fB = edge(B.outer, j, sB);
+      if (!lA || !fA || !lB || !fB || dot(lA.n, lB.n) > -cosTol) continue; // must be parallel and face each other
+      const dAB = dot(sub(lA.a, fB.a), fB.n), dBA = dot(sub(lB.a, fA.a), fA.n); // > 0: short of the face (gap)
+      if (Math.abs(dAB) <= WALL_COINCIDE_TOL || Math.abs(dBA) <= WALL_COINCIDE_TOL) continue;
+      const [line, face, d] = Math.abs(dAB) <= Math.abs(dBA) ? [lA, fB, dAB] : [lB, fA, dBA];
+      const kind = d >= WALL_GAP_MIN && d <= WALL_GAP_MAX ? 'gap' : d < 0 && d >= -WALL_GAP_MAX ? 'overlap' : null;
+      if (!kind) continue;
+      const t1 = dot(sub(line.a, face.a), face.u), t2 = t1 + dot(line.u, face.u) * line.l;
+      const lo = Math.max(0, Math.min(t1, t2)), hi = Math.min(face.l, Math.max(t1, t2));
+      if (hi - lo < 1) continue; // the walls don't run alongside each other
+      out.push({ kind, distance: Math.abs(d), from: { a: at(face, lo, d), b: at(face, hi, d) }, to: { a: at(face, lo), b: at(face, hi) } });
+    }
+  }
+  return out;
 };

@@ -4,6 +4,13 @@ import {
   TWO, twoRoomPng, uploadPlan, wallLengths,
 } from './fixtures';
 
+/** Types the name into the popover (a suggestion wins when one starts with it) and presses Enter. */
+async function nameTraced(page: Page, name: string) {
+  await page.getByTestId('room-name-input').fill(name);
+  await page.getByTestId('room-name-input').press('Enter');
+  await expect(page.getByTestId('room-name-popover')).toHaveCount(0);
+}
+
 const near = (got: number, want: number, what: string) => expect(Math.abs(got - want) / want, `${what}: ${got} vs ${want}`).toBeLessThan(0.02);
 
 test('floor plan: upload, calibrate by known length, trace + name a room, underlay stays visible', async ({ page }) => {
@@ -51,16 +58,16 @@ test('floor plan: upload, calibrate by known length, trace + name a room, underl
   await expect(page.getByTestId('floorplan-step-3')).toHaveAttribute('aria-current', 'step');
   await expect(page.getByTestId('floorplan-step-2').locator('.fp-badge')).toHaveText('✓');
 
-  // Step 3: trace, then name it with a chip.
+  // Step 3: trace, then name it on the plan; tracing stays on.
   await traceRoom(page, rectCorners(PLAN.inner));
-  expect((await state(page)).ui.tool).toBe('select');
-  await page.getByTestId('floorplan-name-chip').filter({ hasText: 'Bedroom' }).click();
+  expect((await state(page)).ui.tool).toBe('draw-room');
+  await nameTraced(page, 'Bedroom');
   const traced = await activeRoom(page);
   expect(traced.name).toBe('Bedroom');
   expect(traced.points).toHaveLength(4);
   const want = [REAL_W, REAL_H, REAL_W, REAL_H];
   wallLengths(traced.points).forEach((l, i) => near(l, want[i], `traced wall ${i}`));
-  await expect(page.getByTestId('floorplan-room-row')).toHaveCount(1);
+  await expect(page.getByTestId('room-row')).toHaveCount(1);
   await expect(page.getByTestId('floorplan-total')).toContainText('sq ft');
   await expect(page.getByTestId('plan-room-label')).toContainText('Bedroom');
 
@@ -84,8 +91,10 @@ test('floor plan: upload, calibrate by known length, trace + name a room, underl
   await expect(page.getByTestId('underlay-image')).toHaveAttribute('opacity', '0.1');
   await page.evaluate(() => window.__store.getState().updateUnderlay({ opacity: 0.6 }));
 
-  // Done tracing → doors step; Finish closes the panel (the toolbar button reopens it).
-  await page.getByTestId('floorplan-done-tracing').click();
+  // Done (on the plan) → doors step; Finish closes the panel (the toolbar button reopens it).
+  await expect(page.getByTestId('draw-hint')).toContainText('first corner of the next room');
+  await page.getByTestId('draw-done').click();
+  expect((await state(page)).ui.tool).toBe('select');
   await expect(page.getByTestId('floorplan-step-4')).toHaveAttribute('aria-current', 'step');
   await page.getByTestId('floorplan-add-door').click();
   expect((await state(page)).ui).toMatchObject({ tool: 'place-opening', openingKind: 'door' });
@@ -132,10 +141,10 @@ test('floor plan: scale by known total area; trace-next-room loop with naming', 
   await expect(page.getByTestId('floorplan-step-3')).toHaveAttribute('aria-current', 'step');
 
   await traceRoom(page, rectCorners(a));
-  await page.getByTestId('floorplan-name-chip').filter({ hasText: 'Bedroom' }).click();
+  await nameTraced(page, 'Bedroom');
   await traceRoom(page, rectCorners(b));
-  await page.getByTestId('floorplan-room-name').fill('Living & dining');
-  await page.getByTestId('floorplan-done-tracing').click();
+  await nameTraced(page, 'Living & dining');
+  await page.getByTestId('draw-done').click();
   const names = (await state(page)).project.rooms.map((r) => r.name);
   expect(names).toEqual(['Bedroom', 'Living & dining']);
   await page.getByTestId('floorplan-step-3').getByRole('button').first().click();
@@ -149,6 +158,92 @@ test('floor plan: scale by known total area; trace-next-room loop with naming', 
   expect((await state(page)).project.underlay!.cmPerPx).toBeCloseTo(TRUE_CM_PER_PX, 1);
   await page.keyboard.press('Control+z'); // the whole rescale is one undo step
   expect((await state(page)).project.underlay!.cmPerPx).toBeCloseTo(1000 / TWO.w, 6);
+});
+
+test('floor plan: name popover: suggestions, unique names, Done; renames locked while it is open', async ({ page }) => {
+  await uploadPlan(page, twoRoomPng());
+  await page.getByTestId('floorplan-skip-scale').click();
+  await traceRoom(page, rectCorners(TWO.a));
+  const pop = page.getByTestId('room-name-popover');
+  await expect(pop).toContainText('Name this room');
+  await expect(page.getByTestId('room-name-option')).toHaveText(
+    ['Bedroom', 'Bathroom', 'Kitchen', 'Living room', 'Dining room', 'Closet', 'Hallway', 'Laundry', 'Balcony']);
+  // One naming at a time: the sidebar's rename button is off while the popover is open.
+  await expect(page.getByTestId('room-rename').first()).toBeDisabled();
+  await page.screenshot({ path: 'test-results/room-name-popover.png' });
+  await page.getByTestId('room-name-input').fill('Kit');
+  await expect(page.getByTestId('room-name-option')).toHaveText(['Kitchen']);
+  // Typing never picks a suggestion by itself (Enter would save "Kit"); the arrow keys do.
+  await expect(page.getByTestId('room-name-option')).toHaveAttribute('aria-selected', 'false');
+  await page.getByTestId('room-name-input').press('ArrowDown');
+  await page.getByTestId('room-name-input').press('Enter');
+  await expect(pop).toHaveCount(0);
+  await expect(page.getByTestId('room-rename').first()).toBeEnabled();
+
+  await traceRoom(page, rectCorners(TWO.b));
+  await page.getByTestId('room-name-input').fill('Kitchen');
+  await expect(page.getByTestId('room-name-option')).toHaveText(['Kitchen 2']);
+  await page.getByTestId('room-name-input').press('Enter');
+  expect((await state(page)).project.rooms.map((r) => r.name)).toEqual(['Kitchen', 'Kitchen 2']);
+  expect((await state(page)).ui.tool).toBe('draw-room');
+  await page.getByTestId('draw-done').click();
+  expect((await state(page)).ui.tool).toBe('select');
+  await expect(page.getByTestId('floorplan-step-4')).toHaveAttribute('aria-current', 'step');
+});
+
+test('floor plan: name popover: arrows, click, Esc, clicking on, and Ctrl+Z', async ({ page }) => {
+  await uploadPlan(page, floorPlanPng());
+  await page.getByTestId('floorplan-skip-scale').click();
+  const corners = rectCorners(PLAN.inner);
+  // Ctrl+Z with the popover open: the room is gone (one step) and so is the popover; still tracing.
+  await traceRoom(page, corners);
+  await page.keyboard.press('Control+z');
+  expect((await state(page)).project.rooms).toHaveLength(0);
+  await expect(page.getByTestId('room-name-popover')).toHaveCount(0);
+  expect((await state(page)).ui.tool).toBe('draw-room');
+
+  // ↓ ↓ Enter → the second suggestion; the name is its own undo step.
+  await traceRoom(page, corners);
+  await page.getByTestId('room-name-input').press('ArrowDown');
+  await page.getByTestId('room-name-input').press('ArrowDown');
+  await expect(page.getByTestId('room-name-option').nth(1)).toHaveAttribute('aria-selected', 'true');
+  await page.getByTestId('room-name-input').press('Enter');
+  expect((await activeRoom(page)).name).toBe('Bathroom');
+  await page.keyboard.press('Control+z');
+  expect((await activeRoom(page)).name).toBe('Room 1');
+  await page.keyboard.press('Control+z');
+  expect((await state(page)).project.rooms).toHaveLength(0);
+
+  // Clicking a suggestion saves it.
+  await traceRoom(page, corners);
+  await page.getByTestId('room-name-option').filter({ hasText: 'Closet' }).click();
+  expect((await activeRoom(page)).name).toBe('Closet');
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('Control+z');
+  expect((await state(page)).project.rooms).toHaveLength(0);
+
+  // Esc, or Enter with nothing typed, keeps the default name.
+  await traceRoom(page, corners);
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('room-name-popover')).toHaveCount(0);
+  expect((await activeRoom(page)).name).toBe('Room 1');
+  expect((await state(page)).ui.tool).toBe('draw-room');
+  await traceRoom(page, corners);
+  await page.getByTestId('room-name-input').press('Enter');
+  await expect(page.getByTestId('room-name-popover')).toHaveCount(0);
+  expect((await state(page)).project.rooms.map((r) => r.name)).toEqual(['Room 1', 'Room 2']);
+
+  // Clicking the plan to start the next room closes the popover, keeps the default name and places the first corner.
+  await traceRoom(page, corners);
+  await clickImg(page, corners[0][0], corners[0][1]);
+  await expect(page.getByTestId('room-name-popover')).toHaveCount(0);
+  expect((await state(page)).project.rooms.map((r) => r.name)).toEqual(['Room 1', 'Room 2', 'Room 3']);
+  await expect(page.getByTestId('draw-hint')).toContainText('next corner');
+  // Esc drops the outline but keeps tracing; Esc again stops.
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('draw-hint')).toContainText('first corner of the next room');
+  await page.keyboard.press('Escape');
+  expect((await state(page)).ui.tool).toBe('select');
 });
 
 // ───────── screenshots for the README: a 1-bedroom apartment ─────────
@@ -175,9 +270,7 @@ const aptPng = async () => {
 
 async function traceNamed(page: Page, r: { x0: number; y0: number; x1: number; y1: number }, name: string) {
   await traceRoom(page, rectCorners(r));
-  const chip = page.getByTestId('floorplan-name-chip').filter({ hasText: name });
-  if (await chip.count()) await chip.click();
-  else await page.getByTestId('floorplan-room-name').fill(name);
+  await nameTraced(page, name);
 }
 
 test('floor plan: screenshots of tracing an apartment', async ({ page }) => {
@@ -188,21 +281,19 @@ test('floor plan: screenshots of tracing an apartment', async ({ page }) => {
   await traceNamed(page, APT.living, 'Living room');
   await traceNamed(page, APT.kitchen, 'Kitchen');
   // Mid-trace: three corners of the bedroom placed, hovering near the fourth.
-  await page.getByTestId('floorplan-trace-next').click();
   for (const [x, y] of rectCorners(APT.bedroom).slice(0, 3)) await clickImg(page, x, y);
   const p = await imgToScreen(page, APT.bedroom.x0 + 3, APT.bedroom.y1 - 2);
   await page.mouse.move(p.x, p.y, { steps: 4 });
   await expect(page.getByTestId('loupe')).toBeVisible();
   await expect(page.getByTestId('draw-hint')).toContainText('green circle');
   await page.screenshot({ path: 'docs/screenshots/floorplan.png' });
-  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape'); // drops the outline; still tracing
 
   await traceNamed(page, APT.bedroom, 'Bedroom');
   await traceNamed(page, APT.bath, 'Bathroom');
   await traceNamed(page, APT.closet, 'Walk-in closet');
   await traceNamed(page, APT.balcony, 'Balcony');
-  await page.getByTestId('floorplan-room-name').blur();
-  await page.getByTestId('floorplan-done-tracing').click();
+  await page.getByTestId('draw-done').click();
   await page.getByTestId('floorplan-step-3').getByRole('button').first().click();
   const { project } = await state(page);
   expect(project.rooms.map((r) => r.name)).toEqual(['Living room', 'Kitchen', 'Bedroom', 'Bathroom', 'Walk-in closet', 'Balcony']);

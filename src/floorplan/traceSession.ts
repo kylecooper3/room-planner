@@ -15,12 +15,10 @@ export interface TraceSession {
   knownArea: number | null;
   /** Per-room override of "counts toward the listed area" (default: everything except balconies). */
   counted: Record<string, boolean>;
-  /** Room just traced, waiting for a name. */
-  namingId: string | null;
   collapsed: boolean;
 }
 export const freshSession = (): TraceSession => ({
-  step: null, skipScale: false, knownArea: null, counted: {}, namingId: null, collapsed: false,
+  step: null, skipScale: false, knownArea: null, counted: {}, collapsed: false,
 });
 export const useTrace = create<TraceSession>(() => freshSession());
 

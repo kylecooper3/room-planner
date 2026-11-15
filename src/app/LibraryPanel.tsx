@@ -1,5 +1,5 @@
 import {
-  AppWindow, Archive, Armchair, Bed, Box, Camera, ChevronDown, DoorOpen, Heater, LampDesk, LampFloor, Pencil, Plug, Plus,
+  AppWindow, Archive, Armchair, Bed, Box, Camera, ChevronDown, ChevronRight, DoorOpen, Heater, LampDesk, LampFloor, Pencil, Plug, Plus,
   RectangleHorizontal, Rows3, Search, ShelvingUnit, SlidersHorizontal, Sofa, SquareDashed, SquareSplitHorizontal, Sprout, Trash, Tv, Utensils,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -8,8 +8,10 @@ import { polygonArea } from '../core/geometry';
 import { formatArea, formatLength } from '../core/units';
 import { PRESETS } from '../models/presets';
 import { useBlobUrl } from '../store/blobs';
+import { deleteDefEverywhere } from '../store/floorPlans';
 import { useStore } from '../store/store';
 import type { Category, ItemDef, OpeningKind, UnitSystem } from '../types';
+import { attempt } from './feedback';
 import { RenameInput } from './inputs';
 import { Menu, MenuItem } from './Menu';
 import { startOptions } from './WelcomeCard';
@@ -45,13 +47,14 @@ function groupPresets(query: string) {
 }
 const s = useStore.getState;
 
-/** The floor plan's rooms: click to make active, rename, delete, add. */
+/** Plan level: the floor plan's rooms. Click one to go into it; rename, delete, add. */
 function RoomsSection() {
   const rooms = useStore((st) => st.project.rooms);
   const activeId = useStore((st) => st.project.activeRoomId);
   const units = useStore((st) => st.project.units);
   const view = useStore((st) => st.ui.view);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const naming = useStore((st) => st.ui.namingRoomId !== null); // one naming at a time: the popover on the plan
   return (
     <section className="app-rooms" aria-label="Rooms">
       <div className="app-section-head">
@@ -62,7 +65,7 @@ function RoomsSection() {
           ))}
         </Menu>
       </div>
-      {rooms.length === 0 && <p className="app-muted app-rooms-empty">No rooms yet. Add one to start.</p>}
+      {rooms.length === 0 && <p className="app-muted app-rooms-empty">No rooms yet — add one to start.</p>}
       <ul className="app-rooms-list" data-testid="rooms-list">
         {rooms.map((r) => (
           <li key={r.id} className={`app-room-row${r.id === activeId ? ' active' : ''}`} data-testid="room-row" data-room-id={r.id}>
@@ -70,16 +73,17 @@ function RoomsSection() {
               <RenameInput label="Room name" value={r.name} onDone={(name) => { setRenaming(null); if (name) s().updateRoom(r.id, { name }); }} />
             ) : (
               <>
-                <button className="app-room-main" aria-current={r.id === activeId ? 'true' : undefined} title={`Open ${r.name} (double-click to rename)`}
-                  onClick={() => s().setActiveRoom(r.id)} onDoubleClick={() => setRenaming(r.id)}>
+                <button className="app-room-main" aria-current={r.id === activeId ? 'true' : undefined} title={`Select ${r.name} (double-click to open)`}
+                  onClick={() => s().focusRoom(r.id)} onDoubleClick={() => s().enterRoom(r.id)}>
                   <Tile><SquareDashed size={15} /></Tile>
                   <span className="app-row-name">{r.name}</span>
                   <span className="app-row-meta">{formatArea(polygonArea(r.points), units)}</span>
                 </button>
                 <span className="app-row-actions">
-                  <button className="btn ghost app-small icon" title="Rename room" aria-label={`Rename ${r.name}`} data-testid="room-rename" onClick={() => setRenaming(r.id)}><Pencil size={13} /></button>
+                  <button className="btn ghost app-small icon" title="Rename room" aria-label={`Rename ${r.name}`} data-testid="room-rename" disabled={naming} onClick={() => setRenaming(r.id)}><Pencil size={13} /></button>
                   <button className="btn ghost app-small icon danger" title="Delete room" aria-label={`Delete ${r.name}`} data-testid="room-delete"
                     onClick={() => confirm(`Delete "${r.name}" and all its layouts?`) && s().deleteRoom(r.id)}><Trash size={13} /></button>
+                  <button className="btn ghost app-small icon" title="Open room" aria-label={`Open ${r.name}`} data-testid="room-open" onClick={() => s().enterRoom(r.id)}><ChevronRight size={15} /></button>
                 </span>
               </>
             )}
@@ -97,13 +101,14 @@ export function LibraryPanel() {
   const units = useStore((st) => st.project.units);
   const library = useStore((st) => st.project.library);
   const hasRoom = useStore((st) => st.project.rooms.length > 0);
+  const roomOpen = useStore((st) => st.ui.roomOpen);
   const noRoomHint = hasRoom ? undefined : 'Add a room first';
   const groups = groupPresets(query);
   const fixtures = FIXTURES.filter(([, , label]) => matches(query, label));
 
+  if (!roomOpen) return <aside className="app-library" aria-label="Rooms"><RoomsSection /></aside>;
   return (
     <aside className="app-library" aria-label="Library">
-      <RoomsSection />
       <div className="app-tabs" role="tablist">
         <button role="tab" aria-selected={tab === 'furniture'} className={tab === 'furniture' ? 'active' : ''} data-testid="tab-furniture" onClick={() => setTab('furniture')}>Furniture</button>
         <button role="tab" aria-selected={tab === 'mine'} className={tab === 'mine' ? 'active' : ''} data-testid="tab-my-stuff" onClick={() => setTab('mine')}>
@@ -159,7 +164,7 @@ export function LibraryPanel() {
                 <button className="btn ghost app-small icon" title="Edit" aria-label={`Edit ${def.name}`} data-testid="my-item-edit" onClick={() => s().setUI({ dialog: 'item-creator', editingDefId: def.id })}><SlidersHorizontal size={13} /></button>
                 <button className="btn ghost app-small icon" title="Rename" aria-label={`Rename ${def.name}`} data-testid="my-item-rename" onClick={() => setRenaming(def.id)}><Pencil size={13} /></button>
                 <button className="btn ghost app-small icon danger" title="Delete" aria-label={`Delete ${def.name}`} data-testid="my-item-delete"
-                  onClick={() => confirm(`Delete "${def.name}"? It will also be removed from every room.`) && s().deleteDef(def.id)}><Trash size={13} /></button>
+                  onClick={() => confirm(`Delete "${def.name}"? It will also be removed from every room in all your floor plans.`) && void attempt('Delete', () => deleteDefEverywhere(def.id))}><Trash size={13} /></button>
               </span>
             </div>
           ))}

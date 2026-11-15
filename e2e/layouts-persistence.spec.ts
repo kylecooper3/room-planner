@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';
-import { activeItems, activeRoom, dragPlan, expect, expectCanvasRendered, loadDemo, open, sofaPng, state, test } from './fixtures';
+import { activeItems, activeRoom, dragPlan, enterRoom, expect, expectCanvasRendered, loadDemo, open, sofaPng, state, test } from './fixtures';
 
 test('layouts: add, duplicate, rename, switch, compare', async ({ page }) => {
   await loadDemo(page);
@@ -113,6 +113,7 @@ test('persistence: autosave + reload, export/import with photo blob, PNG exports
   }), photoId);
   expect(blobSize).toBe(sofaPng().length);
   // The photo shows again when editing the imported item.
+  await enterRoom(fresh);
   await fresh.getByTestId('tab-my-stuff').click();
   await fresh.getByTestId('my-item-edit').click();
   await expect(fresh.locator('.ic-photo img')).toHaveAttribute('src', /^blob:/);

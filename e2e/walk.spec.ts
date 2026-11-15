@@ -14,8 +14,7 @@ async function twoRoomHouse(page: Page) {
     const b = s().addRoom({ points: [{ x: 412, y: 0 }, { x: 812, y: 0 }, { x: 812, y: 300 }, { x: 412, y: 300 }], name: 'B' });
     s().placeItem('preset-sofa-3seat', { x: 612, y: 255 });
     s().placeItem('preset-armchair', { x: 740, y: 70 });
-    s().setActiveRoom(a);
-    s().select(null);
+    s().enterRoom(a);
     s().setUI({ view: '3d' });
     return { a, b };
   });
@@ -129,8 +128,9 @@ test('double-click the floor in overview drops you into walk mode there', async 
   expect((await state(page)).ui.walkMode).toBe(false);
 });
 
-test('clicking an item in another room makes that room active and selects it', async ({ page }) => {
+test('plan level: clicking an item in a room selects that room; Open goes in', async ({ page }) => {
   const { b } = await twoRoomHouse(page);
+  await page.getByTestId('nav-back').click();
   const canvas = page.locator('[data-testid=view3d] canvas');
   await expectCanvasRendered(page, canvas);
   const box = (await canvas.boundingBox())!;
@@ -140,7 +140,10 @@ test('clicking an item in another room makes that room active and selects it', a
   await page.mouse.click(box.x + at.x, box.y + at.y);
   const s = await state(page);
   expect(s.project.activeRoomId).toBe(b);
-  expect(s.ui.selection).toEqual({ type: 'item', id: sofa.id });
+  expect(s.ui.roomOpen).toBe(false);
+  expect(s.ui.selection).toBeNull();
+  await page.getByTestId('inspector-open-room').click();
+  expect((await state(page)).ui.roomOpen).toBe(true);
 });
 
 test('walk the demo room (screenshot)', async ({ page }) => {

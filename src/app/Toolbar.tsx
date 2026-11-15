@@ -1,11 +1,12 @@
 import {
-  Box, ChevronRight, CircleQuestionMark, Columns2, Download, FileImage, FolderOpen, GitCompare, House, ImageDown, LayoutGrid,
+  Box, ChevronLeft, ChevronRight, CircleQuestionMark, Columns2, Download, FileImage, FolderOpen, GitCompare, House, ImageDown, LayoutGrid,
   Map as MapIcon, Menu as MenuIcon, Plus, Redo2, Undo2,
 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { exportPlanPng } from '../editor2d/exportPng';
 import { closeFloorPlan, importFloorPlan, openFloorPlan, renameFloorPlan, useFloorPlans } from '../store/floorPlans';
 import { exportProject, PROJECT_FILE_EXTENSION } from '../store/projectFile';
+import { useActiveRoom } from '../store/selectors';
 import { useStore } from '../store/store';
 import type { ViewMode } from '../types';
 import { exportView3dPng } from '../view3d/exportPng';
@@ -48,27 +49,49 @@ export function useRoomplanPicker(onFile: (file: File) => void, testId: string) 
   return { element, pick: () => input.current?.click() };
 }
 
+/** Back one level, then `Floor plans › plan › room`. The current level's crumb renames on click; parents navigate (double-click renames). */
 function Breadcrumb() {
   const name = usePlanName();
   const activeId = useFloorPlans((f) => f.activeId);
-  const [editing, setEditing] = useState(false);
+  const roomOpen = useStore((st) => st.ui.roomOpen);
+  const room = useActiveRoom();
+  const inRoom = roomOpen && room;
+  const [editing, setEditing] = useState<'plan' | 'room' | null>(null);
+  const home = () => void attempt('Closing the plan', closeFloorPlan);
   return (
     <nav className="app-crumbs" aria-label="Breadcrumb">
-      <button className="app-crumb" data-testid="nav-home" title="All floor plans" onClick={() => void attempt('Closing the plan', closeFloorPlan)}>
+      <button className="btn ghost icon" data-testid="nav-back" title={`Back to ${inRoom ? name : 'all floor plans'}`} aria-label="Back"
+        onClick={() => (inRoom ? s().leaveRoom() : home())}>
+        <ChevronLeft size={16} />
+      </button>
+      <button className="app-crumb" data-testid="nav-home" title="All floor plans" onClick={home}>
         <LayoutGrid size={16} /><span className="app-crumb-home-label">Floor plans</span>
       </button>
       <ChevronRight size={14} className="app-crumb-sep" aria-hidden />
-      {editing ? (
+      {editing === 'plan' ? (
         <RenameInput label="Floor plan name" value={name} onDone={(next) => {
-          setEditing(false);
+          setEditing(null);
           if (next && activeId) void attempt('Rename', () => renameFloorPlan(activeId, next));
         }} />
       ) : (
-        <button className="app-crumb" data-testid="plan-name" title="Rename this floor plan" aria-label={`Floor plan: ${name}. Click to rename`}
-          onClick={() => setEditing(true)}>
+        <button className="app-crumb" data-testid="plan-name"
+          title={inRoom ? `Back to ${name} (double-click to rename)` : 'Rename this floor plan'}
+          aria-label={inRoom ? `Floor plan: ${name}. Click to go back to its rooms` : `Floor plan: ${name}. Click to rename`}
+          onClick={() => (inRoom ? s().leaveRoom() : setEditing('plan'))} onDoubleClick={() => setEditing('plan')}>
           <span className="app-plan-name">{name}</span>
         </button>
       )}
+      {inRoom && <>
+        <ChevronRight size={14} className="app-crumb-sep" aria-hidden />
+        {editing === 'room' ? (
+          <RenameInput label="Room name" value={room.name} onDone={(next) => { setEditing(null); if (next) s().updateRoom(room.id, { name: next }); }} />
+        ) : (
+          <button className="app-crumb" data-testid="room-crumb" title="Rename this room" aria-label={`Room: ${room.name}. Click to rename`}
+            onClick={() => setEditing('room')}>
+            <span className="app-plan-name">{room.name}</span>
+          </button>
+        )}
+      </>}
     </nav>
   );
 }

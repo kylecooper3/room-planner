@@ -62,6 +62,7 @@ try {
   await page.getByTestId('file-menu').waitFor();
   step('demo floor plan created and opened in the editor');
   await page.getByTestId('plan-item').first().waitFor();
+  await page.locator('[data-testid=room-row] .app-room-main').first().click(); // plan level -> inside the room
   const before = await page.getByTestId('plan-item').count();
   await page.getByTestId('view-3d').click();
   const canvas = page.locator('[data-testid=view3d] canvas');
@@ -91,6 +92,7 @@ try {
   await page.getByTestId('plan-item').first().waitFor();
   assert.equal(await page.getByTestId('plan-item').count(), before - 1, 'edit persisted across relaunch');
   step('edit persisted after relaunch');
+  await page.locator('[data-testid=room-row] .app-room-main').first().click(); // plan level -> inside the room
   await page.getByTestId('tab-my-stuff').click();
   await page.getByTestId('new-from-photo').click();
   await page.getByTestId('photo-file').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: sofaPng() });

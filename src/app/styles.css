@@ -199,18 +199,21 @@ kbd {
   gap: var(--sp-3); height: var(--topbar-h); padding: 0 var(--sp-2) 0 var(--gutter); background: var(--surface); border-bottom: 1px solid var(--border);
 }
 .app-tb-left, .app-tb-right { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
+.app-tb-left { overflow: hidden; }
 .app-tb-right { justify-content: flex-end; }
 .app-tb-sep { width: 1px; height: 18px; background: var(--border); margin: 0 var(--sp-1); flex-shrink: 0; }
 .app-crumbs { display: flex; align-items: center; gap: 2px; min-width: 0; margin-left: var(--sp-1); }
 .app-crumb {
   display: inline-flex; align-items: center; gap: 6px; height: var(--ctl-h); padding: 0 var(--sp-2); border: 0; border-radius: var(--r-sm);
-  background: none; color: var(--text-2); font: inherit; font-weight: 500; cursor: pointer; white-space: nowrap;
+  background: none; color: var(--text-2); font: inherit; font-weight: 500; cursor: pointer; white-space: nowrap; min-width: 0;
 }
+.app-crumb:has(.app-crumb-home-label) { flex-shrink: 0; }
 .app-crumb:hover { background: var(--surface-2); color: var(--text); }
 .app-crumb:focus-visible { outline: none; box-shadow: var(--focus); }
 .app-crumb-sep { color: var(--text-3); flex-shrink: 0; }
 .app-plan-name { color: var(--text); font-weight: 600; min-width: 0; max-width: 280px; overflow: hidden; text-overflow: ellipsis; display: block; }
 .app-crumbs .app-rename { width: 220px; height: var(--ctl-h); font-weight: 600; }
+.app-open-room { width: calc(100% - 2 * var(--sp-3)); margin: 0 var(--sp-3) var(--sp-2); justify-content: center; }
 .app-units { font-variant-numeric: tabular-nums; min-width: 60px; }
 .app-tb-note { position: absolute; right: var(--gutter); top: calc(100% + 8px); z-index: 50; box-shadow: var(--shadow); display: flex; gap: var(--sp-2); align-items: center; background: var(--surface); border: 1px solid var(--border); }
 .app-tb-note.error { background: var(--danger-soft); border-color: transparent; }
@@ -351,8 +354,8 @@ kbd {
 .app-room-row.active .app-room-main { font-weight: 600; }
 .app-lib-now { color: var(--accent); font-weight: 600; }
 
-.app-rooms { flex-shrink: 0; padding-bottom: var(--sp-2); }
-.app-rooms-list { list-style: none; margin: 0; padding: 0 var(--sp-1); max-height: 196px; overflow-y: auto; }
+.app-rooms { flex: 1; min-height: 0; display: flex; flex-direction: column; padding-bottom: var(--sp-2); }
+.app-rooms-list { list-style: none; margin: 0; padding: 0 var(--sp-1); flex: 1; min-height: 0; overflow-y: auto; }
 .app-room-row { display: flex; align-items: center; border-radius: var(--r-sm); padding-right: var(--sp-1); }
 .app-room-row .app-rename { flex: 1; margin: 2px var(--sp-1); }
 .app-rooms-empty { padding: var(--sp-1) var(--gutter); }

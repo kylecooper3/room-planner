@@ -90,6 +90,7 @@ export const SHORTCUTS: Shortcut[] = [
     run: (s) => {
       if (s.ui.dialog === 'help' || s.ui.dialog === 'room-setup') return s.setUI({ dialog: 'none' });
       if (s.ui.dialog !== 'none' && s.ui.dialog !== 'floorplan') return false; // other dialogs handle Esc themselves
+      if (s.ui.tool === 'draw-room') return false; // the plan editor's: drop the outline, or stop drawing
       s.select(null);
       s.setUI({ tool: 'select' });
     },
@@ -115,10 +116,11 @@ export const MOUSE_GESTURES: [string, string][] = [
   ['Drag the background / Space + drag / middle-drag', 'Pan (also while drawing a room)'],
   ['Draw room: click', 'Add a corner: snaps to right angles, other rooms, alignment guides and the plan’s walls (Alt or Shift: no snapping)'],
   ['Draw room: click the green circle / Enter', 'Finish the room'],
-  ['Draw room: Backspace / Esc', 'Undo the last point / cancel'],
+  ['Draw room: Backspace / Esc', 'Undo the last point / drop the outline (with none: stop drawing rooms)'],
   ['Click a wall', 'Select it: type its exact length, split it, or open it (no wall) in the inspector'],
   ['Drag a corner', 'Reshape the room (snaps like drawing; Alt or Shift: no snapping)'],
-  ['Click another room', 'Make it the active room'],
+  ['Floor plan: click a room (or its row)', 'Go into it to furnish it; the back button (‹) returns to the floor plan'],
+  ['Inside a room', 'Other rooms are greyed; walls of this room stay editable. Back out to switch rooms'],
   ['3D overview: left-drag / right-drag or Shift + drag / wheel', 'Orbit / pan / zoom (Top view button looks straight down)'],
   ['3D overview: double-click the floor', 'Start walking there'],
   ['Walk mode: click, then move the mouse', 'Capture the mouse and look around (drag to look if capture is unavailable)'],

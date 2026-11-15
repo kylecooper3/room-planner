@@ -148,7 +148,13 @@ function Scene({ rooms, activeRoom, layoutId, readOnly, walkMode, top, setCursor
 
   useEffect(() => () => setCursor(''), [setCursor]);
 
-  const onFloorClick = (e: ThreeEvent<MouseEvent>) => { if (canSelect && e.delta <= CLICK_SLOP) { e.stopPropagation(); useStore.getState().select(null); } };
+  // Plan level: a click on a room highlights it (Open in the inspector goes in). Room level: clicks never switch rooms.
+  const onFloorClick = (e: ThreeEvent<MouseEvent>, roomId: string) => {
+    if (!canSelect || e.delta > CLICK_SLOP) return;
+    e.stopPropagation();
+    const s = useStore.getState();
+    if (s.ui.roomOpen) s.select(null); else s.focusRoom(roomId);
+  };
   const onFloorDoubleClick = (e: ThreeEvent<MouseEvent>) => {
     if (!canSelect) return;
     e.stopPropagation();
@@ -167,7 +173,7 @@ function Scene({ rooms, activeRoom, layoutId, readOnly, walkMode, top, setCursor
         const active = room.id === activeRoom.id;
         return (
           <group key={room.id} name={`room:${room.id}`}>
-            <RoomShell room={room} cutaway={cutaway && !walkMode} passages={passages} onFloorClick={onFloorClick} onFloorDoubleClick={onFloorDoubleClick} />
+            <RoomShell room={room} cutaway={cutaway && !walkMode} passages={passages} onFloorClick={(e) => onFloorClick(e, room.id)} onFloorDoubleClick={onFloorDoubleClick} />
             <RoomItems
               room={room}
               items={active ? activeItems : undefined}
@@ -180,8 +186,8 @@ function Scene({ rooms, activeRoom, layoutId, readOnly, walkMode, top, setCursor
                 e.stopPropagation();
                 if (!canSelect || e.delta > CLICK_SLOP) return;
                 const s = useStore.getState();
-                if (!active) s.setActiveRoom(room.id);
-                s.select({ type: 'item', id });
+                if (!s.ui.roomOpen) s.focusRoom(room.id);
+                else if (active) s.select({ type: 'item', id });
               }}
               onHover={(id, on) => {
                 setHovered((h) => (on ? id : h === id ? null : h));

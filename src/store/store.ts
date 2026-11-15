@@ -8,12 +8,29 @@ export const emptyProject = (): Project => ({
 });
 export const defaultUI = (): UIState => ({
   view: 'plan', tool: 'select', openingKind: 'door', selection: null, showGrid: true, showClearances: true,
-  snap: true, cutaway: true, walkMode: false, compareLayoutId: null, dialog: 'none', editingDefId: null,
+  snap: true, cutaway: true, walkMode: false, compareLayoutId: null, dialog: 'none', editingDefId: null, roomOpen: false, namingRoomId: null,
 });
 
 const HISTORY_CAP = 100;
 const DUPLICATE_OFFSET = 30;
 const uid = (): string => crypto.randomUUID();
+
+/** "Bedroom", or "Bedroom 2" when that name is taken by another room. */
+export function uniqueName(name: string, rooms: Room[], self: string) {
+  const taken = new Set(rooms.filter((r) => r.id !== self).map((r) => r.name));
+  if (!taken.has(name)) return name;
+  let i = 2;
+  while (taken.has(`${name} ${i}`)) i++;
+  return `${name} ${i}`;
+}
+
+/** The project without def `defId` and every placed copy of it (same object when it has neither). */
+export const withoutDef = (p: Project, defId: string): Project => (!p.library.some((d) => d.id === defId)
+  && !p.rooms.some((r) => r.layouts.some((l) => l.items.some((i) => i.defId === defId))) ? p : {
+  ...p,
+  library: p.library.filter((d) => d.id !== defId),
+  rooms: p.rooms.map((r) => ({ ...r, layouts: r.layouts.map((l) => ({ ...l, items: l.items.filter((i) => i.defId !== defId) })) })),
+});
 
 const activeRoom = (p: Project): Room | undefined => p.rooms.find((r) => r.id === p.activeRoomId);
 const activeLayout = (r: Room): Layout | undefined => r.layouts.find((l) => l.id === r.activeLayoutId);
@@ -60,6 +77,12 @@ const validSelection = (p: Project, sel: Selection | null): Selection | null => 
   return sel.index < room.points.length ? sel : null;
 };
 
+/** Room level survives a change only while the same room stays active and exists. */
+const stillOpen = (before: Project, next: Project, roomOpen: boolean): boolean =>
+  roomOpen && next.activeRoomId === before.activeRoomId && next.rooms.some((r) => r.id === next.activeRoomId);
+/** The name popover closes when its room is gone (deleted, undone). */
+const stillNaming = (p: Project, id: string | null): string | null => (id && p.rooms.some((r) => r.id === id) ? id : null);
+
 export const useStore = create<AppState>((set, get) => {
   let past: Project[] = [];
   let future: Project[] = [];
@@ -80,20 +103,27 @@ export const useStore = create<AppState>((set, get) => {
     if (next === project && !ui) return;
     if (next !== project && batchDepth === 0) push(project);
     const merged = { ...curUI, ...ui };
-    set({ project: next, ui: { ...merged, selection: validSelection(next, merged.selection) }, ...flags() });
+    set({
+      project: next,
+      ui: { ...merged, selection: validSelection(next, merged.selection), roomOpen: stillOpen(project, next, merged.roomOpen), namingRoomId: stillNaming(next, merged.namingRoomId) },
+      ...flags(),
+    });
   };
 
   const reset = (project: Project) => {
     past = []; future = []; batchDepth = 0; batchStart = null;
-    set({ project, ui: { ...get().ui, selection: null, compareLayoutId: null }, canUndo: false, canRedo: false });
+    set({ project, ui: { ...get().ui, selection: null, compareLayoutId: null, roomOpen: false, namingRoomId: null }, canUndo: false, canRedo: false });
   };
 
   const travel = (from: Project[], to: Project[]) => {
-    const prev = from.pop();
-    if (!prev) return;
+    const popped = from.pop();
+    if (!popped) return;
     const { project, ui } = get();
     to.push(project);
-    set({ project: prev, ui: { ...ui, selection: validSelection(prev, ui.selection) }, ...flags() });
+    // Inside a room, undo/redo never switches rooms; it only leaves when the room itself is gone.
+    const keep = ui.roomOpen && popped.rooms.some((r) => r.id === project.activeRoomId);
+    const prev = keep && popped.activeRoomId !== project.activeRoomId ? { ...popped, activeRoomId: project.activeRoomId } : popped;
+    set({ project: prev, ui: { ...ui, selection: validSelection(prev, ui.selection), roomOpen: keep, namingRoomId: stillNaming(prev, ui.namingRoomId) }, ...flags() });
   };
 
   return {
@@ -117,8 +147,9 @@ export const useStore = create<AppState>((set, get) => {
       }), { selection: null });
       return id;
     },
+    // Every rename path goes through here, so room names stay unique ("Bedroom 2").
     updateRoom: (roomId, patch) => commit((p) => mapRoom(p, roomId, (r) => ({
-      ...r, ...patch, openings: patch.points ? fitOpenings(r.openings, patch.points, r.points) : r.openings,
+      ...r, ...patch, ...(patch.name !== undefined && { name: uniqueName(patch.name, p.rooms, roomId) }), openings: patch.points ? fitOpenings(r.openings, patch.points, r.points) : r.openings,
     }))),
     deleteRoom: (roomId) => commit((p) => {
       if (!p.rooms.some((r) => r.id === roomId)) return p;
@@ -128,6 +159,15 @@ export const useStore = create<AppState>((set, get) => {
     }),
     setActiveRoom: (roomId) => commit((p) =>
       (p.activeRoomId === roomId || !p.rooms.some((r) => r.id === roomId) ? p : { ...p, activeRoomId: roomId })),
+    enterRoom: (roomId) => set((st) => (!st.project.rooms.some((r) => r.id === roomId) ? st : {
+      project: st.project.activeRoomId === roomId ? st.project : { ...st.project, activeRoomId: roomId },
+      ui: { ...st.ui, roomOpen: true, namingRoomId: null, selection: null, tool: 'select', dialog: st.ui.dialog === 'floorplan' ? 'none' : st.ui.dialog },
+    })),
+    focusRoom: (roomId) => set((st) => (!st.project.rooms.some((r) => r.id === roomId) ? st : {
+      project: st.project.activeRoomId === roomId ? st.project : { ...st.project, activeRoomId: roomId },
+      ui: { ...st.ui, selection: null },
+    })),
+    leaveRoom: () => set((st) => ({ ui: { ...st.ui, roomOpen: false, namingRoomId: null, selection: null, tool: 'select' } })),
 
     addOpening: (o) => {
       if (!activeRoom(get().project)) return '';
@@ -196,12 +236,7 @@ export const useStore = create<AppState>((set, get) => {
       ...p,
       library: p.library.some((d) => d.id === def.id) ? p.library.map((d) => (d.id === def.id ? def : d)) : [...p.library, def],
     })),
-    deleteDef: (defId) => commit((p) => (!p.library.some((d) => d.id === defId)
-      && !p.rooms.some((r) => r.layouts.some((l) => l.items.some((i) => i.defId === defId))) ? p : {
-      ...p,
-      library: p.library.filter((d) => d.id !== defId),
-      rooms: p.rooms.map((r) => ({ ...r, layouts: r.layouts.map((l) => ({ ...l, items: l.items.filter((i) => i.defId !== defId) })) })),
-    })),
+    deleteDef: (defId) => commit((p) => withoutDef(p, defId)),
 
     setUnderlay: (underlay) => commit((p) => ({ ...p, underlay })),
     updateUnderlay: (patch) => commit((p) => (p.underlay ? { ...p, underlay: { ...p.underlay, ...patch } } : p)),

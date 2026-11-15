@@ -30,11 +30,13 @@ export function ToolRail() {
   return (
     <div className="app-rail" role="toolbar" aria-label="Tools" aria-orientation="vertical">
       <RailButton active={ui.tool === 'select'} label="Select" title="Select and move (V)" icon={<MousePointer2 size={18} />} testId="tool-select" onClick={() => set({ tool: 'select' })} />
+      {!ui.roomOpen && <>
       <RailButton active={ui.tool === 'draw-room'} label="Draw room" title="Draw a new room: click its corners"
         icon={<PenTool size={18} />} testId="tool-draw-room" onClick={() => set({ tool: 'draw-room', view: planOrSplit })} />
       <div className="app-rail-sep" />
       <RailButton active={ui.dialog === 'floorplan'} label="Trace plan" title="Trace rooms over a floor-plan image" icon={<ImageUp size={18} />}
         testId="open-floorplan" onClick={() => set({ dialog: ui.dialog === 'floorplan' ? 'none' : 'floorplan', view: planOrSplit })} />
+      </>}
       <div className="app-rail-spacer" />
       <Menu
         label={<Eye size={18} />} title="Display options: grid, snapping, clearances…"

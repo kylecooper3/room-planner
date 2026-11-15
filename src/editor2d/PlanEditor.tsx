@@ -7,19 +7,19 @@ import { generateModel, withItemColors } from '../models/generate';
 import { useStore } from '../store/store';
 import { useActiveRoom, useGetDef, useIssues, useLayout } from '../store/selectors';
 import {
-  clearancePolygon, clipToConvex, distancesToWalls, doorSwingPolygon, getOpeningGeometry, polygonArea, polygonCentroid, projectOnWalls,
-  snapItem,
+  clearancePolygon, clipToConvex, distancesToWalls, doorSwingPolygon, getOpeningGeometry, pointInPolygon, polygonArea, polygonCentroid, projectOnWalls,
+  snapItem, wallNearMisses,
 } from '../core/geometry';
 import { formatArea, formatLength } from '../core/units';
 import { UnderlayLayer } from '../floorplan/UnderlayLayer';
 import { CalibrateTool } from '../floorplan/CalibrateTool';
 import { useInkSnap } from '../floorplan/inkMask';
-import { useTrace } from '../floorplan/traceSession';
 import { PlanViewContext } from './planContext';
 import type { PlanView } from './planContext';
-import { DrawHud, Loupe } from './DrawAids';
-import { cornerAngle, isRightAngle, snapPoint } from './drawSnap';
-import type { SnapHit, SnapKind } from './drawSnap';
+import { snapPoint } from './drawSnap';
+import type { SnapHit } from './drawSnap';
+import { useDrawRoom } from './drawRoom';
+import { FONT, GUIDE, Label, SnapMarker, pts } from './planShapes';
 import { insertCorner, openingsClash } from './wallEdit';
 import {
   bodyColor, boundsOf, clampOffset, dist, fitView, gridStep, openingDefaults, rotationFromPointer, screenToPlan,
@@ -27,7 +27,7 @@ import {
 } from './view';
 import type { View } from './view';
 import './pe-plan.css';
-import { Maximize, ZoomIn, ZoomOut } from 'lucide-react';
+import { ChevronRight, Maximize, ZoomIn, ZoomOut } from 'lucide-react';
 
 export interface PlanEditorProps {
   /** Layout of the active room to show; defaults to the active layout. */
@@ -36,25 +36,14 @@ export interface PlanEditorProps {
   readOnly?: boolean;
 }
 
-const INK = THEME.planLabel;
 const WALL = THEME.planWall;
 const ACCENT = THEME.accent;
-const norm = (a: Vec2, c: Vec2) => { const l = Math.hypot(a.x - c.x, a.y - c.y) || 1; return { x: (a.x - c.x) / l, y: (a.y - c.y) / l }; };
 const DANGER = THEME.danger;
-const GUIDE = '#d6336c';
-const OK = THEME.success;
 const MUTED = THEME.text3;
 const STROKE = THEME.planItemStroke;
 const DIM = THEME.planDim;
-/** Snap marker colour and the word shown next to it. */
-const SNAP_STYLE: Record<SnapKind, [string, string]> = {
-  corner: ['#7c4dde', 'corner'], wall: ['#7c4dde', 'on wall'], align: [GUIDE, 'aligned'], ink: ['#c2410c', 'plan wall'], angle: [ACCENT, 'straight'],
-};
-/** Screen px: click this close to the first corner to close the outline (also the size of its target ring). */
-const CLOSE_PX = 14;
 /** Screen px a left press may travel before it becomes a pan instead of a click (draw tool). */
 const CLICK_SLOP = 4;
-const FONT = "'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif";
 /** Near-white floor fills with only a hint of the finish. */
 const FLOOR_FILL: Record<Room['floor'], string> = { wood: '#fbf8f3', carpet: '#f9f8f6', tile: THEME.planFloor };
 
@@ -79,50 +68,15 @@ const symbolParts = (def: ItemDef): ModelPart[] => {
 };
 
 type Gesture =
-  | { kind: 'pan'; sx: number; sy: number; view: View }
+  /** enter: plan level, the room clicked; highlighted on release unless the press became a pan (double-click opens it). */
+  | { kind: 'pan'; sx: number; sy: number; view: View; enter?: string }
   | { kind: 'draw'; sx: number; sy: number; view: View; raw: Vec2; free: boolean }
   | { kind: 'item'; id: string; dx: number; dy: number; batched: boolean }
   | { kind: 'rotate'; id: string; batched: boolean }
   | { kind: 'opening'; id: string; batched: boolean }
   | { kind: 'corner'; index: number; batched: boolean };
 
-const pts = (poly: Vec2[]) => poly.map((p) => `${p.x},${p.y}`).join(' ');
 const add = (a: Vec2, b: Vec2, s = 1): Vec2 => ({ x: a.x + b.x * s, y: a.y + b.y * s });
-
-/** Text at a constant screen size. `bg` draws a soft rounded plate behind it (for labels over busy drawing). */
-function Label({ at, k, children, size = 12, fill = INK, weight = 500, bg, angle = 0 }: {
-  at: Vec2; k: number; children: ReactNode; size?: number; fill?: string; weight?: number; bg?: string; angle?: number;
-}) {
-  const text = (
-    <text x={at.x} y={at.y} fontSize={size / k} fontFamily={FONT} fontWeight={weight} fill={fill} textAnchor="middle"
-      dominantBaseline="central" pointerEvents="none" transform={angle ? `rotate(${angle} ${at.x} ${at.y})` : undefined}>{children}</text>
-  );
-  if (!bg) return text;
-  const w = (String(children).length * size * 0.56 + 10) / k, h = (size + 6) / k;
-  return (
-    <g pointerEvents="none">
-      <rect x={at.x - w / 2} y={at.y - h / 2} width={w} height={h} rx={h / 2} fill={bg} fillOpacity={0.88} />
-      {text}
-    </g>
-  );
-}
-
-/** Small coloured marker (+ word) where a snap landed, plus its dashed alignment guides. */
-function SnapMarker({ hit, k }: { hit: SnapHit; k: number }) {
-  if (!hit.kind) return null;
-  const [color, word] = SNAP_STYLE[hit.kind];
-  const s = 5 / k;
-  return (
-    <g data-testid="snap-marker" data-kind={hit.kind} pointerEvents="none">
-      {hit.guides.map((g, i) => (
-        <line key={i} x1={g.a.x} y1={g.a.y} x2={g.b.x} y2={g.b.y} stroke={color} strokeWidth={1.25 / k} strokeDasharray={`${5 / k} ${4 / k}`} />
-      ))}
-      <rect x={hit.p.x - s} y={hit.p.y - s} width={2 * s} height={2 * s} fill="none" stroke={color} strokeWidth={2 / k}
-        transform={`rotate(45 ${hit.p.x} ${hit.p.y})`} />
-      <Label at={{ x: hit.p.x + 24 / k, y: hit.p.y + 16 / k }} k={k} size={10} weight={600} fill={color} bg="#ffffff">{word}</Label>
-    </g>
-  );
-}
 
 function OpeningSymbol({ o, room, k, selected, floor }: { o: Opening; room: Room; k: number; selected: boolean; floor: string }) {
   const g = getOpeningGeometry(room.points, o);
@@ -211,6 +165,9 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
   const rooms = useStore((s) => s.project.rooms);
   const underlay = useStore((s) => s.project.underlay);
   const others = rooms.filter((r) => r.id !== room?.id);
+  const snapRoom = (r: Room) => ({ id: r.id, inner: r.points, outer: wallOutline(r.points, r.wallThickness) });
+  // Tracing over a visible plan image at plan level: drawn rooms in full-strength accent, so they stand out from the picture.
+  const contrast = !ui.roomOpen && !!underlay?.visible;
   const tool = readOnly ? 'select' : ui.tool;
 
   const svgRef = useRef<SVGSVGElement>(null);
@@ -224,7 +181,6 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
   const [dragItem, setDragItem] = useState<string | null>(null);
   /** `free`: snapping suspended for this point (Alt or Shift held, or snapping toggled off). */
   const [cursor, setCursor] = useState<{ p: Vec2; free: boolean } | null>(null);
-  const [drawPts, setDrawPts] = useState<Vec2[]>([]);
   const [hoverItem, setHoverItem] = useState<string | null>(null);
   const [cornerSnap, setCornerSnap] = useState<SnapHit | null>(null);
   const inkSnap = useInkSnap(!readOnly);
@@ -300,43 +256,14 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
     return () => { window.removeEventListener('keydown', onAlt); window.removeEventListener('keyup', onAlt); };
   }, [readOnly]);
 
-  // ── draw-room tool ──
-  const finishDraw = (points: Vec2[]) => {
-    if (points.length < 3) return;
-    const st = useStore.getState();
-    const id = st.addRoom({ points });
-    st.setUI({ tool: 'select' });
-    setDrawPts([]);
-    if (st.ui.dialog === 'floorplan') useTrace.setState({ namingId: id, step: 3 }); // the tracing panel asks for its name
-  };
-  const cancelDraw = () => { setDrawPts([]); useStore.getState().setUI({ tool: 'select' }); };
-  useEffect(() => { if (tool !== 'draw-room') setDrawPts([]); }, [tool]);
-  useEffect(() => {
-    if (tool !== 'draw-room') return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
-      if (e.key === 'Enter') { e.preventDefault(); finishDraw(drawPts); }
-      else if (e.key === 'Backspace') { e.preventDefault(); setDrawPts((p) => p.slice(0, -1)); }
-      else if (e.key === 'Escape') cancelDraw();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }); // re-bound each render so it sees the latest points
-  const drawSnap = (raw: Vec2, free: boolean): SnapHit => snapPoint({
-    raw, prev: drawPts[drawPts.length - 1], align: drawPts.slice(0, -1), rooms: rooms.map((r) => r.points), ink: inkSnap, pxPerCm: k, free,
+  const draw = useDrawRoom({
+    tool, readOnly, cursor, rooms, snapRooms: rooms.map(snapRoom), ink: inkSnap, k, units, view, vw, vh, namingRoomId: ui.namingRoomId,
   });
-  const closes = (raw: Vec2) => drawPts.length >= 3 && dist(raw, drawPts[0]) * k < CLOSE_PX;
-  const addDrawPoint = (raw: Vec2, free: boolean) => {
-    if (closes(raw)) { finishDraw(drawPts); return; }
-    const { p } = drawSnap(raw, free);
-    if (drawPts.length && dist(p, drawPts[drawPts.length - 1]) < 1e-9) return; // 2nd click of a double-click
-    setDrawPts([...drawPts, p]);
-  };
 
-  // ── place-opening tool: the nearest wall of ANY room (that room becomes active) ──
+  // ── place-opening tool: the nearest wall of ANY room (that room becomes active); only the open room at room level ──
   const openingAt = (p: Vec2): { room: Room; o: Omit<Opening, 'id'> } | null => {
     let best: { r: Room; hit: ReturnType<typeof projectOnWalls> } | null = null;
-    for (const r of room ? [room, ...others] : others) {
+    for (const r of ui.roomOpen ? (room ? [room] : []) : room ? [room, ...others] : others) {
       if (r.points.length < 3) continue;
       const hit = projectOnWalls(r.points, p);
       if (hit.distance * k <= 40 && (!best || hit.distance < best.hit.distance)) best = { r, hit };
@@ -364,6 +291,7 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
     if (readOnly) { startPan(); return; }
     const p = toPlan(e);
     const st = useStore.getState();
+    if (st.ui.namingRoomId) st.setUI({ namingRoomId: null }); // clicking on: the room keeps its default name
     if (tool === 'calibrate') return;
     // A click adds the corner on release; a press that moves becomes a pan, so panning mid-draw never adds a stray corner.
     if (tool === 'draw-room') { gesture.current = { kind: 'draw', sx: e.clientX, sy: e.clientY, view: viewRef.current, raw: p, free: noSnap(e) }; return; }
@@ -385,7 +313,6 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
     const opening = el.closest('[data-opening-id]');
     const item = el.closest('[data-item-id]');
     const wall = el.closest('[data-testid="plan-wall"]');
-    const other = el.closest('[data-other-room]');
     if (rot && ui.selection?.type === 'item') {
       gesture.current = { kind: 'rotate', id: ui.selection.id, batched: false };
     } else if (corner) {
@@ -403,12 +330,12 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
       if (it) gesture.current = { kind: 'item', id, dx: it.x - p.x, dy: it.y - p.y, batched: false };
     } else if (wall) {
       st.select({ type: 'wall', index: Number(wall.getAttribute('data-wall')) });
-    } else if (other) {
-      st.setActiveRoom(other.getAttribute('data-other-room')!);
-      st.select(null);
     } else {
       st.select(null);
       startPan();
+      // Plan level: a click on any room's floor (furniture is click-through) highlights it; double-click or Open goes in.
+      const hit = ui.roomOpen ? undefined : [...(room ? [room] : []), ...others].find((r) => r.points.length >= 3 && pointInPolygon(p, r.points));
+      if (hit && gesture.current?.kind === 'pan') gesture.current.enter = hit.id;
     }
   };
 
@@ -422,6 +349,7 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
       g = gesture.current = { kind: 'pan', sx: g.sx, sy: g.sy, view: g.view };
     }
     if (g.kind === 'pan') {
+      if (g.enter && Math.hypot(e.clientX - g.sx, e.clientY - g.sy) > CLICK_SLOP) g.enter = undefined;
       setView({ ...g.view, x: g.view.x + e.clientX - g.sx, y: g.view.y + e.clientY - g.sy });
       return;
     }
@@ -459,7 +387,7 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
       if (!openingsClash(room.openings, { ...o, ...next })) st.updateOpening(g.id, next);
     } else if (g.kind === 'corner') {
       const hit = snapPoint({
-        raw: p, align: room.points.filter((_, i) => i !== g.index), rooms: others.map((r) => r.points), ink: inkSnap, pxPerCm: k, free: noSnap(e),
+        raw: p, align: room.points.filter((_, i) => i !== g.index), rooms: others.map(snapRoom), ink: inkSnap, pxPerCm: k, free: noSnap(e),
       });
       const np = hit.p;
       setCornerSnap(hit.kind ? hit : null);
@@ -471,7 +399,8 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
   const onPointerUp = () => {
     const g = gesture.current;
     gesture.current = null;
-    if (g?.kind === 'draw') addDrawPoint(g.raw, g.free);
+    if (g?.kind === 'draw') draw.addPoint(g.raw, g.free);
+    else if (g?.kind === 'pan' && g.enter) useStore.getState().focusRoom(g.enter);
     else if (g && g.kind !== 'pan' && g.batched) useStore.getState().endBatch();
     setCornerSnap(null);
     setGuides([]);
@@ -480,9 +409,15 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
 
   const onDoubleClick = (e: RMouseEvent<SVGSVGElement>) => {
     if (readOnly) return;
-    if (tool === 'draw-room') { finishDraw(drawPts); return; }
+    if (tool === 'draw-room') { draw.finish(); return; }
     // Not e.target: pointer capture (taken on pointerdown) retargets the click/dblclick to the <svg> itself.
     const wallEl = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-testid="plan-wall"]');
+    if (!ui.roomOpen && tool === 'select' && !wallEl) {
+      const p = toPlan(e);
+      const hit = [...(room ? [room] : []), ...others].find((r) => r.points.length >= 3 && pointInPolygon(p, r.points));
+      if (hit) useStore.getState().enterRoom(hit.id);
+      return;
+    }
     if (tool !== 'select' || !room || !wallEl) return;
     const i = Number(wallEl.getAttribute('data-wall'));
     const p = toPlan(e);
@@ -528,7 +463,7 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
     const flat = isFlat(def);
     const line = bad ? DANGER : STROKE;
     return (
-      <g key={it.id} data-testid="plan-item" data-item-id={it.id} data-issue={bad ? 'true' : 'false'}
+      <g key={it.id} data-testid="plan-item" data-item-id={it.id} data-issue={bad ? 'true' : 'false'} pointerEvents={ui.roomOpen ? undefined : 'none'}
         onPointerEnter={() => setHoverItem(it.id)} onPointerLeave={() => setHoverItem((h) => (h === it.id ? null : h))}>
         {bad && <title>{its.map((i) => i.message).join('\n')}</title>}
         <g transform={`translate(${it.x} ${it.y}) rotate(${it.rotation})`}>
@@ -594,7 +529,7 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
       const j = (i + 1) % n;
       if (!closed && j === 0) return null;
       const b = r.points[j];
-      const poly = <polygon points={pts([a, b, outer[j], outer[i]])} fill={WALL} stroke={WALL} strokeWidth={0.5 / k} strokeLinejoin="round" />;
+      const poly = <polygon points={pts([a, b, outer[j], outer[i]])} fill={contrast ? ACCENT : WALL} stroke={contrast ? ACCENT : WALL} strokeWidth={0.5 / k} strokeLinejoin="round" />;
       if (!active) return <g key={i}>{poly}</g>;
       // Dimension line parallel to the wall, outside it: extension lines, 45° ticks, and the interior length on top.
       const L = dist(a, b) || 1, ux = (b.x - a.x) / L, uy = (b.y - a.y) / L;
@@ -611,7 +546,8 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
       return (
         <g key={i} data-testid="plan-wall" data-wall={i} data-selected={selected ? 'true' : undefined} style={editable ? { cursor: 'pointer' } : undefined}>
           {poly}
-          {selected && <polygon data-chrome="" points={pts([a, b, outer[j], outer[i]])} fill={ACCENT} stroke={ACCENT} strokeWidth={2 / k} strokeLinejoin="round" />}
+          {/* Over the plan image every wall is accent blue, so a selected one is drawn dark instead. */}
+          {selected && <polygon data-chrome="" points={pts([a, b, outer[j], outer[i]])} fill={contrast ? WALL : ACCENT} stroke={contrast ? WALL : ACCENT} strokeWidth={2 / k} strokeLinejoin="round" />}
           <g stroke={dc} strokeWidth={0.75 / k} pointerEvents="none">
             <line x1={add(a, nrm, r.wallThickness + 3 / k).x} y1={add(a, nrm, r.wallThickness + 3 / k).y} x2={add(da, nrm, 4 / k).x} y2={add(da, nrm, 4 / k).y} />
             <line x1={add(b, nrm, r.wallThickness + 3 / k).x} y1={add(b, nrm, r.wallThickness + 3 / k).y} x2={add(db, nrm, 4 / k).x} y2={add(db, nrm, 4 / k).y} />
@@ -635,72 +571,17 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
     );
   };
 
-  // Draw-room overlay
-  const last = drawPts[drawPts.length - 1];
-  const closing = tool === 'draw-room' && !!cursor && closes(cursor.p);
-  const live = tool === 'draw-room' && cursor && !closing ? drawSnap(cursor.p, cursor.free) : null;
-  const end = closing ? drawPts[0] : live?.p ?? null;
-  const outline = end ? [...drawPts, end] : drawPts;
-  const drawMeasure = last && end
-    ? `${formatLength(dist(last, end), units)}${outline.length >= 3 ? ` · area ${formatArea(polygonArea(outline), units)}` : ''}`
-    : null;
-  // Right-angle marks on every square corner of the outline being drawn, and the live angle at the corner being worked from.
-  const corners: { a: Vec2; c: Vec2; b: Vec2 }[] = [];
-  for (let i = 1; i < outline.length - 1; i++) corners.push({ a: outline[i - 1], c: outline[i], b: outline[i + 1] });
-  if (closing && drawPts.length >= 3) corners.push({ a: drawPts[drawPts.length - 1], c: drawPts[0], b: drawPts[1] });
-  const liveAngle = last && end && drawPts.length >= 2 ? cornerAngle(drawPts[drawPts.length - 2], last, end) : null;
-  const rightMark = ({ a, c, b }: { a: Vec2; c: Vec2; b: Vec2 }, key: number) => {
-    if (!isRightAngle(cornerAngle(a, c, b))) return null;
-    const s = 12 / k, u = norm(a, c), v = norm(b, c);
-    const p1 = { x: c.x + u.x * s, y: c.y + u.y * s }, p3 = { x: c.x + v.x * s, y: c.y + v.y * s };
-    return <polyline key={key} data-testid="draw-right-angle" points={pts([p1, { x: p1.x + v.x * s, y: p1.y + v.y * s }, p3])} fill="none" stroke={OK} strokeWidth={1.5 / k} />;
-  };
-  const drawOverlay = () => {
-    if (tool !== 'draw-room') return null;
-    return (
-      <g data-chrome="" pointerEvents="none">
-        {drawPts.length >= 2 && end && <polygon points={pts(outline)} fill={ACCENT} fillOpacity={0.08} stroke="none" />}
-        {drawPts.length > 1 && <polyline points={pts(drawPts)} fill="none" stroke={ACCENT} strokeWidth={2 / k} strokeLinejoin="round" />}
-        {last && end && (
-          <>
-            <line x1={last.x} y1={last.y} x2={end.x} y2={end.y} stroke={ACCENT} strokeWidth={2 / k} strokeDasharray={`${6 / k} ${4 / k}`} />
-            <Label at={{ x: (last.x + end.x) / 2, y: (last.y + end.y) / 2 - 14 / k }} k={k} fill={ACCENT} weight={600} bg="#ffffff">{formatLength(dist(last, end), units)}</Label>
-          </>
-        )}
-        {drawPts.length >= 3 && (
-          <circle data-testid="draw-close-target" cx={drawPts[0].x} cy={drawPts[0].y} r={CLOSE_PX / k} fill={OK}
-            fillOpacity={closing ? 0.55 : 0.18} stroke={OK} strokeWidth={2.5 / k} />
-        )}
-        {drawPts.map((p, i) => (
-          <circle key={i} cx={p.x} cy={p.y} r={(i === 0 ? 6 : 4) / k} fill="#ffffff" stroke={i === 0 && drawPts.length >= 3 ? OK : ACCENT} strokeWidth={2 / k} />
-        ))}
-        {corners.map(rightMark)}
-        {liveAngle !== null && !closing && (() => {
-          const square = isRightAngle(liveAngle);
-          const out = norm({ x: 2 * last.x - (drawPts[drawPts.length - 2].x + end!.x) / 2, y: 2 * last.y - (drawPts[drawPts.length - 2].y + end!.y) / 2 }, last);
-          return (
-            <g data-testid="draw-angle" data-square={square ? 'true' : 'false'}>
-              <Label at={{ x: last.x + out.x * 22 / k, y: last.y + out.y * 22 / k }} k={k} fill={square ? OK : ACCENT} weight={600} bg="#ffffff">{`${Math.round(liveAngle)}°`}</Label>
-            </g>
-          );
-        })()}
-        {live && <SnapMarker hit={live} k={k} />}
-        {end && !closing && <circle cx={end.x} cy={end.y} r={3 / k} fill={ACCENT} />}
-      </g>
-    );
-  };
-  const loupeContent = (
-    <>
-      {rooms.map((r) => <polygon key={r.id} points={pts(r.points)} fill="none" stroke={WALL} strokeWidth={2} vectorEffect="non-scaling-stroke" />)}
-      {outline.length > 1 && <polyline points={pts(outline)} fill="none" stroke={ACCENT} strokeWidth={2.5} vectorEffect="non-scaling-stroke" />}
-    </>
-  );
-
   const dragged = dragItem ? placed.find((p) => p.it.id === dragItem) : undefined;
   const preview = tool === 'place-opening' && cursor ? openingAt(cursor.p) : null;
   const calloutId = (sel?.type === 'item' ? sel.id : null);
   const hint = !rooms.length && !underlay && tool === 'select' ? 'No room yet: choose “Draw room” and click to place its corners.' : null;
   const wallEnd = sel?.type === 'wall' && room ? (sel.index + 1) % room.points.length : -1;
+  // Plan level: walls that almost meet a neighbour's (a small gap or overlap) are marked so they can be dragged flush.
+  const nearMisses = useMemo(() => (ui.roomOpen ? [] : wallNearMisses(rooms.map(snapRoom))), [rooms, ui.roomOpen]);
+  // The neighbour wall the point being drawn / corner being dragged is attached to: highlighted green.
+  const link = cornerSnap?.link ?? draw.link;
+  const linkedRoom = link && rooms.find((r) => r.id === link.roomId);
+  const linked = linkedRoom ? { r: linkedRoom, wall: link.wall } : null;
 
   return (
     <div className="pe-root">
@@ -714,17 +595,36 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
           <g data-plan-root="" transform={`translate(${view.x} ${view.y}) scale(${k})`}>
             {ui.showGrid && renderGrid()}
             {others.map((r) => r.points.length >= 3 && (
-              <polygon key={r.id} data-chrome="" data-testid="plan-other-room" data-other-room={r.id} points={pts(r.points)}
-                fill={FLOOR_FILL[r.floor] ?? FLOOR_FILL.wood} fillOpacity={0.6} stroke="none" style={editable ? { cursor: 'pointer' } : undefined}>
-                <title>{`${r.name}: click to edit this room`}</title>
-              </polygon>
+              ui.roomOpen ? (
+                // Room level: other rooms are greyed context, not clickable (back out to switch rooms).
+                <polygon key={r.id} data-chrome="" data-testid="plan-other-room" data-other-room={r.id} points={pts(r.points)}
+                  fill={THEME.planGridMajor} fillOpacity={0.35} stroke="none" pointerEvents="none" />
+              ) : (
+                <polygon key={r.id} data-chrome="" data-testid="plan-other-room" data-other-room={r.id} points={pts(r.points)}
+                  fill={contrast ? ACCENT : FLOOR_FILL[r.floor] ?? FLOOR_FILL.wood} fillOpacity={contrast ? 0.25 : 0.6} stroke="none" style={editable ? { cursor: 'pointer' } : undefined}>
+                  <title>{`${r.name}: click to open this room`}</title>
+                </polygon>
+              )
             ))}
-            {room && room.points.length >= 3 && <polygon data-testid="plan-floor" points={pts(room.points)} fill={floor} stroke="none" />}
+            {room && room.points.length >= 3 && <polygon data-testid="plan-floor" points={pts(room.points)} fill={contrast ? ACCENT : floor} fillOpacity={contrast ? 0.25 : 1} stroke="none" />}
             {/* Underlay sits above the floor fills (so tracing stays visible) and below walls/items; chrome = not exported. */}
             <g data-chrome=""><UnderlayLayer /></g>
-            {others.length > 0 && <g data-chrome="" opacity={0.45} pointerEvents="none">{others.map((r) => <g key={r.id}>{renderWalls(r, false)}</g>)}</g>}
+            {others.length > 0 && (
+              <g data-chrome="" data-testid="plan-other-walls" opacity={contrast ? 1 : ui.roomOpen ? 0.25 : 0.45} pointerEvents="none">
+                {others.map((r) => <g key={r.id}>{renderWalls(r, false)}</g>)}
+              </g>
+            )}
             {room && renderWalls(room, true)}
-            {others.map((r) => <g key={r.id} data-chrome="" opacity={0.75}>{roomLabel(r)}</g>)}
+            {nearMisses.map((m, i) => (
+              <polygon key={i} data-chrome="" data-testid="plan-wall-gap" data-kind={m.kind} points={pts([m.from.a, m.from.b, m.to.b, m.to.a])}
+                fill={THEME.warning} fillOpacity={0.45} stroke={THEME.warning} strokeWidth={2 / k} strokeLinejoin="round" pointerEvents="none" />
+            ))}
+            {linked && (() => {
+              const { inner, outer } = snapRoom(linked.r), i = linked.wall, j = (i + 1) % inner.length;
+              return <polygon data-chrome="" data-testid="plan-wall-attached" points={pts([inner[i], inner[j], outer[j], outer[i]])} fill={THEME.success}
+                stroke={THEME.success} strokeWidth={2 / k} strokeLinejoin="round" pointerEvents="none" />;
+            })()}
+            {others.map((r) => <g key={r.id} data-chrome="" opacity={contrast ? 1 : ui.roomOpen ? 0.4 : 0.75} pointerEvents="none">{roomLabel(r)}</g>)}
             {room && roomLabel(room)}
             {room?.openings.map((o) => (
               <g key={o.id} data-testid="plan-opening" data-opening-id={o.id} style={editable ? { cursor: 'pointer' } : undefined}>
@@ -787,7 +687,7 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
                 })}
               </g>
             )}
-            {drawOverlay()}
+            {draw.overlay}
             {tool === 'calibrate' && <CalibrateTool />}
           </g>
         </PlanViewContext.Provider>
@@ -796,13 +696,16 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
             textAnchor="middle" pointerEvents="none">{hint}</text>
         )}
       </svg>
-      {tool === 'draw-room' && !readOnly && (
-        <>
-          <DrawHud count={drawPts.length} free={!!cursor?.free} canFinish={drawPts.length >= 3} measure={drawMeasure}
-            onUndo={() => setDrawPts((p) => p.slice(0, -1))} onFinish={() => finishDraw(drawPts)} onCancel={cancelDraw} />
-          {cursor && <Loupe center={end ?? cursor.p} k={k} view={view} pane={{ w: vw, h: vh }}>{loupeContent}</Loupe>}
-        </>
-      )}
+      {draw.aids}
+      {!ui.roomOpen && !readOnly && tool === 'select' && !draw.naming && room && room.points.length >= 3 && (() => {
+        const c = polygonCentroid(room.points);
+        return (
+          <button type="button" className="btn primary pe-open-room" data-testid="plan-open-room" title={`Open ${room.name} (or double-click it)`}
+            style={{ left: c.x * k + view.x, top: c.y * k + view.y + 26 }} onClick={() => useStore.getState().enterRoom(room.id)}>
+            Open<ChevronRight size={15} aria-hidden />
+          </button>
+        );
+      })()}
       <div className="pe-zoom app-float">
         <button type="button" className="btn ghost icon" title="Zoom out" aria-label="Zoom out" onClick={() => zoomCenter(0.8)}><ZoomOut size={16} aria-hidden /></button>
         <button type="button" className="btn ghost icon" title="Zoom in" aria-label="Zoom in" onClick={() => zoomCenter(1.25)}><ZoomIn size={16} aria-hidden /></button>

@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { activeItems, activeRoom, displayToggle, dragPlan, expect, loadDemo, open, planToScreen, roomByDimensions, state, test } from './fixtures';
+import { activeItems, activeRoom, displayToggle, dragPlan, enterRoom, expect, loadDemo, open, planToScreen, roomByDimensions, state, test } from './fixtures';
 
 const clickPlan = async (page: Page, x: number, y: number) => {
   const s = await planToScreen(page, { x, y });
@@ -135,7 +135,8 @@ test('draw tool: L-shaped room with right-angle snapping, Enter closes', async (
     expect(a.x === b.x || a.y === b.y, `wall ${i} axis-aligned`).toBe(true);
   }
   expect(room.points.map((p) => [Math.round(p.x), Math.round(p.y)])).toEqual([[0, 0], [400, 0], [400, 200], [200, 200], [200, 400], [0, 400]]);
-  expect((await state(page)).ui.tool).toBe('select');
+  expect((await state(page)).ui.tool).toBe('draw-room'); // drawing stays on for the next room, after naming this one
+  await expect(page.getByTestId('room-name-input')).toBeFocused();
 });
 
 test('openings: window, outlet, radiator; door hinge and swing from the inspector; corner insertion', async ({ page }) => {
@@ -200,11 +201,13 @@ test('dialogs close; wall colour drag is one undo step; Esc leaves tools', async
   await page.getByRole('button', { name: 'Got it' }).click();
   await expect(page.getByTestId('help-overlay')).toHaveCount(0);
 
+  await page.getByTestId('nav-back').click(); // "Add a room" lives at plan level
   await page.getByTestId('new-room').click();
   await page.getByTestId('new-room-dimensions').click();
   await expect(page.getByRole('dialog', { name: 'Room dimensions' })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
+  await enterRoom(page);
 
   await page.getByTestId('wall-color').click(); // opens the palette popover; Custom… is the native picker
   const color = page.getByTestId('wall-color-custom');

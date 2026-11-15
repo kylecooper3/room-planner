@@ -63,13 +63,22 @@ export async function displayToggle(page: Page, testId: string) {
   await page.getByTestId('display-menu').click(); // closes it (Esc would go to walk mode once that has the focus)
   await expect(page.getByTestId(testId)).toHaveCount(0);
 }
+/** Plan level → room level: the Open button on the room's row in the rooms list (the first room when no name is given). */
+export async function enterRoom(page: Page, name?: string) {
+  const rows = page.getByTestId('room-row');
+  await (name ? rows.filter({ hasText: name }) : rows).first().getByTestId('room-open').click();
+  await expect(page.getByTestId('room-crumb')).toBeVisible();
+  if (name) await expect(page.getByTestId('room-crumb')).toHaveText(name);
+}
+/** The demo plan, inside its room (room level). */
 export async function loadDemo(page: Page) {
   await open(page);
   await page.getByTestId('load-demo').click();
   await expect(page.getByTestId('plan-item').first()).toBeVisible();
+  await enterRoom(page);
 }
 
-/** Creates a rectangular room through the "Enter dimensions" dialog (bare numbers are feet). */
+/** Creates a rectangular room through the "Enter dimensions" dialog (bare numbers are feet), then goes into it. */
 export async function roomByDimensions(page: Page, w = '10', l = '12', h = '8') {
   await open(page);
   await page.getByTestId('start-dimensions').click();
@@ -78,6 +87,7 @@ export async function roomByDimensions(page: Page, w = '10', l = '12', h = '8') 
   await page.getByTestId('room-height').fill(h);
   await page.getByTestId('room-create').click();
   await expect(page.getByTestId('plan-wall').first()).toBeVisible();
+  await enterRoom(page);
 }
 
 /** Plan point (cm) → page coordinates in the (first editable) plan SVG. */
@@ -213,14 +223,13 @@ export async function uploadPlan(page: Page, png: Buffer) {
   await expect(page.getByTestId('underlay-image')).toHaveCount(1);
   await expect(page.getByTestId('floorplan-dropzone')).toHaveCount(0);
 }
-/** Traces one room by clicking image-pixel corners, closing it on the first corner's green circle. */
+/** Traces one room by clicking image-pixel corners, closing it on the first corner's green circle (the name popover opens). */
 export async function traceRoom(page: Page, corners: [number, number][]) {
-  const trace = page.getByTestId('floorplan-trace').or(page.getByTestId('floorplan-trace-next'));
-  await trace.click();
+  if ((await state(page)).ui.tool !== 'draw-room') await page.getByTestId('floorplan-trace').click();
   await expect(page.getByTestId('draw-hint')).toContainText('first corner');
   for (const [x, y] of corners) await clickImg(page, x, y);
   await expect(page.getByTestId('draw-close-target')).toBeVisible();
   await clickImg(page, corners[0][0], corners[0][1]);
-  await expect(page.getByTestId('floorplan-naming')).toBeVisible();
+  await expect(page.getByTestId('room-name-input')).toBeFocused();
 }
 export const rectCorners = (r: Rect): [number, number][] => [[r.x0, r.y0], [r.x1, r.y0], [r.x1, r.y1], [r.x0, r.y1]];

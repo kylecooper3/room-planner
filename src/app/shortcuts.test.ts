@@ -88,9 +88,10 @@ describe('handleShortcut', () => {
     expect(fns.select).toHaveBeenCalledWith(null);
   });
 
-  test('Backspace does nothing in draw-room', () => {
+  test('Backspace and Esc are left to the draw-room tool', () => {
     const { state, fns } = mockState({ ...item, tool: 'draw-room' });
     expect(handleShortcut(key('Backspace'), state)).toBe(false);
+    expect(handleShortcut(key('Escape'), state)).toBe(false);
     expect(fns.deleteItem).not.toHaveBeenCalled();
   });
 

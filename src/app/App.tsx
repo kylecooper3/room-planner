@@ -52,6 +52,7 @@ function AppShell() {
   const hydrated = useStore((s) => s.hydrated);
   const ready = useFloorPlans((f) => f.ready);
   const planOpen = useFloorPlans((f) => f.activeId !== null);
+  const roomOpen = useStore((s) => s.ui.roomOpen);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (useFloorPlans.getState().activeId !== null && handleShortcut(e, useStore.getState())) e.preventDefault();
@@ -71,7 +72,7 @@ function AppShell() {
       <div className="app-body">
         <LibraryPanel />
         <div className="app-center">
-          <LayoutsBar />
+          {roomOpen && <LayoutsBar />}
           <ViewArea />
         </div>
         <Inspector />

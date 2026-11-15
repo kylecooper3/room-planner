@@ -12,7 +12,7 @@ import { create } from 'zustand';
 import { del, get, keys, set } from 'idb-keyval';
 import type { ItemDef, Project, Vec2 } from '../types';
 import { THEME } from '../theme';
-import { emptyProject, useStore } from './store';
+import { emptyProject, useStore, withoutDef } from './store';
 import { exportProject, importProject, isProject, referencedBlobIds } from './projectFile';
 import { deleteBlob, deleteOrphanBlobs } from './blobs';
 
@@ -259,6 +259,27 @@ export const deleteFloorPlan = async (id: string): Promise<void> => {
 export const importFloorPlan = async (file: File): Promise<string> => {
   writable();
   return addPlan(await importProject(file)); // validates (isProject) and writes its blobs
+};
+
+/**
+ * Deletes one of "My stuff" from the open plan (one undo step) AND from every other plan's record: otherwise a plan that still
+ * places it would bring it back into the shared list when opened. Undo restores it in the open plan only.
+ */
+export const deleteDefEverywhere = async (defId: string): Promise<void> => {
+  useStore.getState().deleteDef(defId);
+  stuff = stuff.filter((d) => d.id !== defId);
+  if (!canSave) return;
+  const activeId = useFloorPlans.getState().activeId;
+  await serial(async () => {
+    await set(STUFF, stuff);
+    for (const m of useFloorPlans.getState().plans) {
+      if (m.id === activeId) continue;
+      const p = await get<unknown>(PLAN(m.id));
+      if (!isProject(p)) continue; // damaged: left untouched
+      const next = withoutDef(p, defId);
+      if (next !== p) await set(PLAN(m.id), next);
+    }
+  });
 };
 
 /** .roomplan file of any plan (open or not). */
