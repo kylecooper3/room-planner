@@ -7,7 +7,7 @@ const ACTIONS = [
   'newProject', 'loadDemo', 'replaceProject', 'setUnits', 'setProjectName', 'addRoom', 'updateRoom', 'deleteRoom', 'setActiveRoom',
   'addOpening', 'updateOpening', 'deleteOpening', 'addLayout', 'duplicateLayout', 'renameLayout', 'deleteLayout',
   'setActiveLayout', 'placeItem', 'updateItem', 'deleteItem', 'duplicateItem', 'saveDef', 'deleteDef', 'setUnderlay',
-  'updateUnderlay', 'undo', 'redo', 'beginBatch', 'endBatch', 'setUI', 'select',
+  'updateUnderlay', 'undo', 'redo', 'beginBatch', 'endBatch', 'setUI', 'select', 'leaveRoom',
 ] as const;
 
 const room: Room = {
@@ -124,5 +124,17 @@ describe('handleShortcut', () => {
     handleShortcut(key('Escape'), state);
     expect(fns.select).toHaveBeenCalledWith(null);
     expect(fns.setUI).toHaveBeenCalledWith({ tool: 'select' });
+    expect(fns.leaveRoom).not.toHaveBeenCalled();
+  });
+
+  test('Esc leaves the room only with nothing selected, the select tool, no dialog and not typing', () => {
+    const leaves = (ui: Partial<UIState>, e = key('Escape')) => { const { state, fns } = mockState({ roomOpen: true, ...ui }); handleShortcut(e, state); return fns.leaveRoom.mock.calls.length > 0; };
+    expect(leaves({})).toBe(true);
+    expect(leaves({ roomOpen: false })).toBe(false);
+    expect(leaves(item)).toBe(false); // deselects first
+    expect(leaves({ tool: 'place-opening' })).toBe(false);
+    expect(leaves({ dialog: 'floorplan' })).toBe(false);
+    expect(leaves({ dialog: 'help' })).toBe(false);
+    expect(leaves({}, key('Escape', { target: document.createElement('input') }))).toBe(false);
   });
 });

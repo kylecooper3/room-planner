@@ -85,12 +85,13 @@ export const SHORTCUTS: Shortcut[] = [
     },
   },
   {
-    keys: 'Esc', label: 'Close help / deselect and go back to the Select tool', inDialogs: true,
+    keys: 'Esc', label: 'Close help / deselect and go back to the Select tool / with nothing selected, leave the room', inDialogs: true,
     match: (e) => e.key === 'Escape',
     run: (s) => {
       if (s.ui.dialog === 'help' || s.ui.dialog === 'room-setup') return s.setUI({ dialog: 'none' });
       if (s.ui.dialog !== 'none' && s.ui.dialog !== 'floorplan') return false; // other dialogs handle Esc themselves
       if (s.ui.tool === 'draw-room') return false; // the plan editor's: drop the outline, or stop drawing
+      if (s.ui.roomOpen && s.ui.dialog === 'none' && s.ui.tool === 'select' && !s.ui.selection) return s.leaveRoom();
       s.select(null);
       s.setUI({ tool: 'select' });
     },

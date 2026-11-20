@@ -11,7 +11,7 @@ import { THEME } from '../theme';
 import { useMemo } from 'react';
 import { LengthInput, NumberInput, TextInput } from './inputs';
 import { deleteCorner, normDeg } from './shortcuts';
-import { insertCorner, openGaps, openingsClash, setWallLength, toggleOpenWall } from '../editor2d/wallEdit';
+import { insertCorner, openGaps, openingsClash, setWallLength, toggleOpenWall, wallJoin } from '../editor2d/wallEdit';
 
 const s = useStore.getState;
 /** Item positions beyond 100 m from the origin are typos, not furniture. */
@@ -173,6 +173,9 @@ function WallPanel({ room, index, units }: { room: Room; index: number; units: U
   const end = (index + 1) % room.points.length;
   const gaps = openGaps(room, index);
   const blocked = !gaps.length && room.openings.some((o) => o.wall === index);
+  const rooms = useStore((st) => st.project.rooms);
+  const planLevel = useStore((st) => !st.ui.roomOpen);
+  const join = planLevel ? wallJoin(rooms, room.id, index) : null;
   return (
     <>
       <Head kind="Wall" icon={<Spline size={13} />} title={`Wall ${index + 1}`} sub={room.name} />
@@ -181,6 +184,12 @@ function WallPanel({ room, index, units }: { room: Room; index: number; units: U
         onCommit={(l) => s().updateRoom(room.id, { points: setWallLength(room.points, index, l) })} />
       <p className="app-muted">Typing a length moves the corner at the wall’s end (highlighted, corner {end + 1}) along the wall; a square room stays square.</p>
       </Section>
+      {join && (
+        <Section title="Neighbour">
+          <button className="btn primary" data-testid="wall-join" onClick={() => s().updateRoom(room.id, { points: join.points })}>Join walls</button>
+          <p className="app-muted">This wall stops {formatLength(join.miss.distance, units)} {join.miss.kind === 'gap' ? 'short of' : 'inside'} the room next to it. Join slides it flush.</p>
+        </Section>
+      )}
       <Section title="Shape">
         <button className="btn" data-testid="wall-split" title="Insert a corner in the middle of this wall" onClick={() => insertCorner(s(), room, index, 0.5)}><Scissors size={15} /> Split wall</button>
         <p className="app-muted">Tip: double-click a wall to add a corner exactly where you click.</p>

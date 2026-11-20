@@ -272,7 +272,8 @@ export const snapItem: SnapItem = ({ roomPoints, others, pose, size, threshold }
 };
 
 /** A near-miss between two rooms' walls: `from` on a room's wall line, `to` its projection on the neighbour's outer face. */
-export interface WallNearMiss { kind: 'gap' | 'overlap'; distance: number; from: Segment; to: Segment }
+/** `wall`: the wall drawn as `from` (index into the input rooms + wall index): sliding it onto `to` joins them. */
+export interface WallNearMiss { kind: 'gap' | 'overlap'; distance: number; from: Segment; to: Segment; wall: { room: number; index: number } }
 /** cm: walls this close count as attached; gaps are reported from WALL_GAP_MIN to WALL_GAP_MAX (overlaps up to WALL_GAP_MAX). */
 export const WALL_COINCIDE_TOL = 0.5, WALL_GAP_MIN = 2, WALL_GAP_MAX = 40;
 
@@ -301,13 +302,13 @@ export const wallNearMisses = (rooms: { inner: Vec2[]; outer: Vec2[] }[]): WallN
       if (!lA || !fA || !lB || !fB || dot(lA.n, lB.n) > -cosTol) continue; // must be parallel and face each other
       const dAB = dot(sub(lA.a, fB.a), fB.n), dBA = dot(sub(lB.a, fA.a), fA.n); // > 0: short of the face (gap)
       if (Math.abs(dAB) <= WALL_COINCIDE_TOL || Math.abs(dBA) <= WALL_COINCIDE_TOL) continue;
-      const [line, face, d] = Math.abs(dAB) <= Math.abs(dBA) ? [lA, fB, dAB] : [lB, fA, dBA];
+      const [line, face, d, wall] = Math.abs(dAB) <= Math.abs(dBA) ? [lA, fB, dAB, { room: ai, index: i }] : [lB, fA, dBA, { room: bi, index: j }];
       const kind = d >= WALL_GAP_MIN && d <= WALL_GAP_MAX ? 'gap' : d < 0 && d >= -WALL_GAP_MAX ? 'overlap' : null;
       if (!kind) continue;
       const t1 = dot(sub(line.a, face.a), face.u), t2 = t1 + dot(line.u, face.u) * line.l;
       const lo = Math.max(0, Math.min(t1, t2)), hi = Math.min(face.l, Math.max(t1, t2));
       if (hi - lo < 1) continue; // the walls don't run alongside each other
-      out.push({ kind, distance: Math.abs(d), from: { a: at(face, lo, d), b: at(face, hi, d) }, to: { a: at(face, lo), b: at(face, hi) } });
+      out.push({ kind, distance: Math.abs(d), from: { a: at(face, lo, d), b: at(face, hi, d) }, to: { a: at(face, lo), b: at(face, hi) }, wall });
     }
   }
   return out;

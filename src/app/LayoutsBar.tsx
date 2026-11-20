@@ -1,4 +1,4 @@
-import { Copy, Ellipsis, Pencil, Plus, Trash } from 'lucide-react';
+import { ArrowLeft, Copy, Ellipsis, Pencil, Plus, Trash } from 'lucide-react';
 import { useState } from 'react';
 import { useActiveRoom } from '../store/selectors';
 import { useStore } from '../store/store';
@@ -15,6 +15,7 @@ export function LayoutsBar() {
 
   return (
     <nav className="app-layouts" aria-label="Layouts">
+      <button className="btn ghost" data-testid="layouts-back" title="Back to the floor plan (Esc)" onClick={() => s().leaveRoom()}><ArrowLeft size={16} /> Back to floor plan</button>
       <div className="app-layout-tabs">
         {room.layouts.map((l) =>
           editing === l.id ? (
