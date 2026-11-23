@@ -163,17 +163,64 @@ export function flushDistance(points: Vec2[], i: number, face: Segment): number 
   return (face.a.x - a.x) * nrm.x + (face.a.y - a.y) * nrm.y;
 }
 
-/** Wall-drag snapping: the flush slide onto another room's outer wall face nearest to `d`, within `tol` cm; else d unchanged. */
-export function snapSlide(points: Vec2[], i: number, d: number, rooms: SnapRoom[], tol: number): { d: number; link?: { roomId: string; wall: number } } {
-  let best: { d: number; link?: { roomId: string; wall: number } } = { d }, bd = tol;
+export interface SlideSnap { d: number; link?: { roomId: string; wall: number }; guide?: Segment }
+
+/**
+ * Wall-drag snapping, nearest to `d` wins:
+ * - flush onto another room's outer wall face (shared wall), within `tol` cm → `link`;
+ * - in line with another room's wall that faces the same way (its inner line, or its outer face lining up with this wall's
+ *   outer face, `t` = this wall's thickness), within `alignTol` cm → `guide`, a line through both walls to draw.
+ * Else d unchanged.
+ */
+export function snapSlide(points: Vec2[], i: number, d: number, rooms: SnapRoom[], tol: number, alignTol = 0, t = 0): SlideSnap {
+  let best: SlideSnap = { d }, bd = Infinity;
+  const a = points[i], b = points[(i + 1) % points.length], L = Math.hypot(b.x - a.x, b.y - a.y);
+  if (L < 1e-9) return best;
+  const nrm = wallNormal(points, i), ux = (b.x - a.x) / L, uy = (b.y - a.y) / L;
+  const offset = (p: Vec2) => (p.x - a.x) * nrm.x + (p.y - a.y) * nrm.y;
+  const parallel = (s: Segment) => {
+    const fx = s.b.x - s.a.x, fy = s.b.y - s.a.y, fl = Math.hypot(fx, fy);
+    return fl > 1e-9 && Math.abs((fx * nrm.x + fy * nrm.y) / fl) <= Math.sin(Math.PI / 180);
+  };
   for (const r of rooms) {
     if (r.inner.length < 3) continue;
-    r.outer.forEach((a, w) => {
-      const f = flushDistance(points, i, { a, b: r.outer[(w + 1) % r.outer.length] });
-      if (f !== null && Math.abs(f - d) <= bd) { bd = Math.abs(f - d); best = { d: f, link: { roomId: r.id, wall: w } }; }
-    });
+    const n = r.inner.length;
+    for (let w = 0; w < n; w++) {
+      const outerSeg = { a: r.outer[w], b: r.outer[(w + 1) % n] }, innerSeg = { a: r.inner[w], b: r.inner[(w + 1) % n] };
+      const f = flushDistance(points, i, outerSeg);
+      if (f !== null && Math.abs(f - d) <= tol && Math.abs(f - d) < bd) { bd = Math.abs(f - d); best = { d: f, link: { roomId: r.id, wall: w } }; }
+      // Same facing (its outer side is on this wall's outer side) and parallel: line them up.
+      if (!alignTol || !parallel(innerSeg) || offset(r.outer[w]) - offset(r.inner[w]) <= 0) continue;
+      // c: the slide; line: where the lined-up line runs (inner line, or the shared outer-face line).
+      for (const { c, line } of [{ c: offset(innerSeg.a), line: offset(innerSeg.a) }, { c: offset(outerSeg.a) - t, line: offset(outerSeg.a) }]) {
+        if (Math.abs(c - d) > alignTol || Math.abs(c - d) >= bd) continue;
+        bd = Math.abs(c - d);
+        const along = (p: Vec2) => (p.x - a.x) * ux + (p.y - a.y) * uy;
+        const ts = [0, L, along(innerSeg.a), along(innerSeg.b)];
+        const on = (s: number) => ({ x: a.x + ux * s + nrm.x * line, y: a.y + uy * s + nrm.y * line });
+        best = { d: c, guide: { a: on(Math.min(...ts)), b: on(Math.max(...ts)) } };
+      }
+    }
   }
   return best;
+}
+
+/**
+ * Every wall joined to wall `start` through shared stretches, the whole chain (a long wall shared by two rooms, and so on),
+ * with the direction it must slide: +1 = along its own normal like `start`, -1 = against it (a shared partner faces the
+ * other way). `start` itself is included with +1. Slide each wall by sign × d to move the whole joined wall together.
+ */
+export function sharedChain(shared: { owner: { room: number; wall: number }; other: { room: number; wall: number } }[], start: { room: number; wall: number }): { room: number; wall: number; sign: number }[] {
+  const seen = new Map<string, { room: number; wall: number; sign: number }>([[`${start.room}:${start.wall}`, { ...start, sign: 1 }]]);
+  const todo = [...seen.values()];
+  for (let cur = todo.pop(); cur; cur = todo.pop()) {
+    for (const s of shared) {
+      const next = s.owner.room === cur.room && s.owner.wall === cur.wall ? s.other : s.other.room === cur.room && s.other.wall === cur.wall ? s.owner : null;
+      const key = next && `${next.room}:${next.wall}`;
+      if (next && key && !seen.has(key)) { const n = { ...next, sign: -cur.sign }; seen.set(key, n); todo.push(n); }
+    }
+  }
+  return [...seen.values()];
 }
 
 /** "Join walls": when wall i of room `roomId` has a near-miss (wallNearMisses), that mark and the room's points with the wall slid flush. */

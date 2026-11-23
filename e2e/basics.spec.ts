@@ -1,8 +1,4 @@
-import { mkdirSync } from 'node:fs';
-import { activeItems, activeRoom, dragPlan, enterRoom, expect, expectCanvasRendered, loadDemo, open, state, test } from './fixtures';
-
-const SHOTS = 'docs/screenshots';
-mkdirSync(SHOTS, { recursive: true });
+import { activeItems, activeRoom, docShot, dragPlan, enterRoom, expect, expectCanvasRendered, loadDemo, open, state, test } from './fixtures';
 
 test('welcome → demo room in plan, 3D and split views', async ({ page }) => {
   await open(page);
@@ -12,17 +8,17 @@ test('welcome → demo room in plan, 3D and split views', async ({ page }) => {
   await expect(page.getByTestId('plan-item')).toHaveCount(6);
   await expect(page.locator('[data-testid=plan-item][data-issue=true]')).toHaveCount(0);
   await expect(page.getByTestId('all-fits')).toBeVisible();
-  await page.screenshot({ path: `${SHOTS}/plan.png` });
+  await page.screenshot({ path: docShot('plan.png') });
 
   await page.getByTestId('view-3d').click();
   await expect(page.getByTestId('plan-svg')).toHaveCount(0);
   await expectCanvasRendered(page, page.locator('[data-testid=view3d] canvas'));
-  await page.screenshot({ path: `${SHOTS}/view3d.png` });
+  await page.screenshot({ path: docShot('view3d.png') });
 
   await page.getByTestId('view-split').click();
   await expect(page.getByTestId('plan-svg')).toBeVisible();
   await expectCanvasRendered(page, page.locator('[data-testid=view3d] canvas'));
-  await page.screenshot({ path: `${SHOTS}/split.png` });
+  await page.screenshot({ path: docShot('split.png') });
 });
 
 test('room by dimensions, bed snaps flush to a wall, units toggle is display-only', async ({ page }) => {

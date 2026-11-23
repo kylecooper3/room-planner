@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { activeItems, expect, expectCanvasRendered, hue, loadDemo, sofaPng, state, tablePng, test } from './fixtures';
+import { docShot, activeItems, expect, expectCanvasRendered, hue, loadDemo, sofaPng, state, tablePng, test } from './fixtures';
 
 const HUB = /huggingface\.co|hf\.co/;
 
@@ -90,7 +90,7 @@ test.describe('photo items, hub blocked (fallbacks)', () => {
   test.beforeEach(async ({ page }) => { await page.route(HUB, (r) => r.abort()); });
   for (const [i, c] of CASES.entries()) {
     test(`${c.name} from a photo`, async ({ page }) => {
-      await photoFlow(page, c, true, i === 0 ? 'docs/screenshots/item-creator.png' : undefined);
+      await photoFlow(page, c, true, i === 0 ? docShot('item-creator.png') : undefined);
     });
   }
 });

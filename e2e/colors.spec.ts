@@ -1,4 +1,4 @@
-import { activeItems, expect, loadDemo, state, test } from './fixtures';
+import { docShot, activeItems, expect, loadDemo, state, test } from './fixtures';
 
 const SAGE = '#97a585';
 const bedColors = async (page: Parameters<typeof activeItems>[0]) =>
@@ -15,7 +15,7 @@ test('per-item colour: pick from the inspector palette (one undo step), custom d
 
   await page.getByTestId('item-color-cushion').click();
   await expect(page.getByTestId('item-color-cushion-swatch')).toHaveCount(16);
-  await page.screenshot({ path: 'docs/screenshots/item-colour.png' });
+  await page.screenshot({ path: docShot('item-colour.png') });
   await page.locator(`[data-testid=item-color-cushion-swatch][data-color="${SAGE}"]`).click();
   await expect(page.getByTestId('item-color-cushion-swatch')).toHaveCount(0); // picking closes the popover
   expect(await bedColors(page)).toEqual({ cushion: SAGE });

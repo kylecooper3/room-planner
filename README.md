@@ -48,7 +48,7 @@ npx playwright install chromium   # one-time, for the browser tests
 npm run e2e                       # end-to-end tests (Playwright; starts the dev server itself)
 ```
 
-The e2e run also regenerates the screenshots in `docs/screenshots/`. The two "live ML" photo tests download models from
+To regenerate the screenshots in `docs/screenshots/`, run the e2e suite with `UPDATE_SCREENSHOTS=1` (normal runs leave them alone). The two "live ML" photo tests download models from
 huggingface.co and are skipped when it cannot be reached.
 
 ## Feature tour

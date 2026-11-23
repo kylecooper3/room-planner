@@ -65,9 +65,14 @@ export function useDrawRoom({ tool, readOnly, cursor, rooms, snapRooms, ink, k, 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }); // re-bound each render so it sees the latest points
-  const drawSnap = (raw: Vec2, free: boolean): SnapHit => snapPoint({
-    raw, prev: drawPts[drawPts.length - 1], align: drawPts.slice(0, -1), rooms: snapRooms, ink, pxPerCm: k, free,
-  });
+  const drawSnap = (raw: Vec2, free: boolean): SnapHit => {
+    const key = drawPts.length ? linkOf.current.get(drawPts[drawPts.length - 1]) : undefined;
+    const [roomId, wall] = key ? key.split(':') : [];
+    return snapPoint({
+      raw, prev: drawPts[drawPts.length - 1], align: drawPts.slice(0, -1), rooms: snapRooms, ink, pxPerCm: k, free,
+      follow: roomId ? { roomId, wall: Number(wall) } : null,
+    });
+  };
   // A point on the same neighbour wall as the last two extends that wall instead of adding a corner.
   const extendsWall = ({ link }: SnapHit) => {
     const key = link && `${link.roomId}:${link.wall}`, n = drawPts.length;

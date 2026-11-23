@@ -29,6 +29,8 @@ export const test = base.extend<{ consoleErrors: string[] }>({
   }, { auto: true }],
 });
 export { expect };
+/** README screenshot path, only when UPDATE_SCREENSHOTS=1 (otherwise undefined: no file, so test runs don't rewrite docs/). */
+export const docShot = (name: string) => (process.env.UPDATE_SCREENSHOTS ? `docs/screenshots/${name}` : undefined);
 
 export const state = (page: Page) => page.evaluate(() => {
   const s = window.__store.getState();

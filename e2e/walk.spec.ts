@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, expectCanvasRendered, loadDemo, open, state, test } from './fixtures';
+import { docShot, expect, expectCanvasRendered, loadDemo, open, state, test } from './fixtures';
 
 const cam = (page: Page) => page.evaluate(() => window.__view3d!.camera());
 
@@ -32,7 +32,7 @@ test('whole house in 3D: overview top view + pan, walk through the door', async 
   await expectCanvasRendered(page, canvas);
   await expect.poll(() => page.evaluate(() => window.__view3d!.rooms().sort())).toEqual([a, b].sort());
   await page.waitForTimeout(300);
-  await canvas.screenshot({ path: 'docs/screenshots/house-3d.png' });
+  await canvas.screenshot({ path: docShot('house-3d.png') });
 
   // Overview: top view animates to straight down and back.
   await expect(page.getByTestId('cam-overview')).toHaveAttribute('aria-pressed', 'true');
@@ -153,7 +153,7 @@ test('walk the demo room (screenshot)', async ({ page }) => {
   await expectCanvasRendered(page, canvas);
   await page.getByTestId('cam-walk').click();
   await page.waitForTimeout(500);
-  await page.locator('[data-testid=view3d]').screenshot({ path: 'docs/screenshots/walk.png' });
+  await page.locator('[data-testid=view3d]').screenshot({ path: docShot('walk.png') });
   await page.getByTestId('cam-overview').click();
   expect((await state(page)).ui.walkMode).toBe(false);
 });

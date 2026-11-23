@@ -16,11 +16,11 @@ import { CalibrateTool } from '../floorplan/CalibrateTool';
 import { useInkSnap } from '../floorplan/inkMask';
 import { PlanViewContext } from './planContext';
 import type { PlanView } from './planContext';
-import { MAX_WALL_CM, snapPoint, WALL_SNAP_PX } from './drawSnap';
+import { MAX_WALL_CM, SNAP_PX, snapPoint, WALL_SNAP_PX } from './drawSnap';
 import type { SnapHit } from './drawSnap';
 import { useDrawRoom } from './drawRoom';
 import { FONT, GUIDE, Label, SnapMarker, pts } from './planShapes';
-import { insertCorner, openingsClash, resizeOpening, slideWall, snapSlide, wallJoin, wallNormal } from './wallEdit';
+import { insertCorner, openingsClash, resizeOpening, sharedChain, slideWall, snapSlide, wallJoin, wallNormal } from './wallEdit';
 import {
   bodyColor, boundsOf, clampOffset, dist, fitView, gridStep, openingDefaults, rotationFromPointer, screenToPlan,
   wallOutline, zoomAbout,
@@ -79,8 +79,8 @@ type Gesture =
   | { kind: 'corner'; index: number; batched: boolean }
   /** Slides wall `index` along its normal; `points`/`from`: the room and pointer at the press. */
   | { kind: 'wall'; index: number; sx: number; sy: number; from: Vec2; points: Vec2[]; batched: boolean;
-      /** Other rooms' walls shared with this one (at the press): they slide with it. */
-      partners: { id: string; wall: number; points: Vec2[] }[] };
+      /** Every wall joined to this one through shared walls (sharedChain, at the press), per room: they slide with it. */
+      partners: { id: string; points: Vec2[]; walls: { wall: number; sign: number }[] }[] };
 
 const add = (a: Vec2, b: Vec2, s = 1): Vec2 => ({ x: a.x + b.x * s, y: a.y + b.y * s });
 
@@ -355,8 +355,13 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
       const index = Number(wall.getAttribute('data-wall'));
       st.select({ type: 'wall', index });
       const ri = room ? roomIndex(room) : -1;
-      const partners = shared.flatMap((s) => (s.owner.room === ri && s.owner.wall === index ? [s.other] : s.other.room === ri && s.other.wall === index ? [s.owner] : []))
-        .map((w) => ({ id: rooms[w.room].id, wall: w.wall, points: rooms[w.room].points }));
+      // The whole joined wall: its shared partners, their partners, … grouped per room (so two walls of one room both move).
+      const partners: { id: string; points: Vec2[]; walls: { wall: number; sign: number }[] }[] = [];
+      for (const w of ri < 0 ? [] : sharedChain(shared, { room: ri, wall: index })) {
+        if (w.room === ri && w.wall === index) continue;
+        const r = rooms[w.room], pr = partners.find((q) => q.id === r.id) ?? (partners.push({ id: r.id, points: r.points, walls: [] }), partners[partners.length - 1]);
+        pr.walls.push({ wall: w.wall, sign: w.sign });
+      }
       if (room) gesture.current = { kind: 'wall', index, sx: e.clientX, sy: e.clientY, from: p, points: room.points, batched: false, partners };
     } else {
       st.select(null);
@@ -434,14 +439,17 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
       const nrm = wallNormal(g.points, g.index);
       const raw = (p.x - g.from.x) * nrm.x + (p.y - g.from.y) * nrm.y;
       const moving = g.partners.map((q) => q.id); // they follow the wall: not snap targets
-      const s = noSnap(e) ? { d: raw } : snapSlide(g.points, g.index, raw, others.filter((r) => !moving.includes(r.id)).map(snapRoom), WALL_SNAP_PX / k);
-      const np = slideWall(g.points, g.index, s.d);
+      const s = noSnap(e) ? { d: raw } : snapSlide(g.points, g.index, raw, others.filter((r) => !moving.includes(r.id)).map(snapRoom), WALL_SNAP_PX / k, SNAP_PX / k, room.wallThickness);
+      setGuides('guide' in s && s.guide ? [{ ...s.guide, kind: 'align' }] : []);
+      const slideAll = (pts: Vec2[], walls: { wall: number; sign: number }[]) => walls.reduce((q, w) => slideWall(q, w.wall, w.sign * s.d), pts);
+      const own = g.partners.find((q) => q.id === room.id);
+      const np = slideAll(slideWall(g.points, g.index, s.d), own?.walls ?? []);
       const a = np[g.index], b = np[(g.index + 1) % np.length];
       setCornerSnap(s.link ? { p: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, kind: 'wall', guides: [], link: s.link } : null);
       startBatch(g);
       st.updateRoom(room.id, { points: np });
-      // A shared wall's other side faces the other way: it slides by -d along its own normal.
-      for (const q of g.partners) st.updateRoom(q.id, { points: slideWall(q.points, q.wall, -s.d) });
+      // A shared wall's other side faces the other way: it slides by -d along its own normal (sharedChain's sign).
+      for (const q of g.partners) if (q.id !== room.id) st.updateRoom(q.id, { points: slideAll(q.points, q.walls) });
     }
   };
 
@@ -455,9 +463,12 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
       const st = useStore.getState(), r = selectActiveRoom(st);
       if (g.kind === 'corner' && cornerSnap?.kind === 'ink' && inkSnap?.band && r) {
         const c = polygonCentroid(r.points), q = r.points[g.index], sx = Math.sign(c.x - q.x), sy = Math.sign(c.y - q.y), p = { ...q };
-        // Measure each line a wall-width along it, clear of the crossing where the two lines meet.
-        const rx = sx ? inkSnap.band({ x: q.x, y: q.y + sy * MAX_WALL_CM }, { x: sx, y: 0 }) : null;
-        const ry = sy ? inkSnap.band({ x: q.x + sx * MAX_WALL_CM, y: q.y }, { x: 0, y: sy }) : null;
+        // Measure each line a wall-width along it, clear of the crossing where the two lines meet — at most halfway along
+        // the shorter neighbouring wall, so a short wall is never measured past its far end.
+        const n = r.points.length, side = (i: number) => Math.hypot(r.points[(i + 1) % n].x - r.points[i].x, r.points[(i + 1) % n].y - r.points[i].y);
+        const off = Math.min(MAX_WALL_CM, side(g.index) / 2, side((g.index + n - 1) % n) / 2);
+        const rx = sx ? inkSnap.band({ x: q.x, y: q.y + sy * off }, { x: sx, y: 0 }) : null;
+        const ry = sy ? inkSnap.band({ x: q.x + sx * off, y: q.y }, { x: 0, y: sy }) : null;
         if (rx) p.x += sx * rx.hi;
         if (ry) p.y += sy * ry.hi;
         st.updateRoom(r.id, { points: r.points.map((q, i) => (i === g.index ? p : q)) });
@@ -724,6 +735,12 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
             })()}
             {others.map((r) => <g key={r.id} data-chrome="" opacity={ui.roomOpen ? 0.4 : contrast ? 1 : 0.75} pointerEvents="none">{roomLabel(r)}</g>)}
             {room && roomLabel(room)}
+            {/* Other rooms' doors and windows (not clickable): the overview shows every room's openings, also on shared walls. */}
+            {others.map((r) => (
+              <g key={`op-${r.id}`} data-chrome="" data-testid="plan-other-openings" opacity={ui.roomOpen ? 0.4 : 1} pointerEvents="none">
+                {r.openings.map((o) => <OpeningSymbol key={o.id} o={o} room={r} k={k} floor={FLOOR_FILL[r.floor] ?? FLOOR_FILL.wood} selected={false} />)}
+              </g>
+            ))}
             {room?.openings.map((o) => (
               <g key={o.id} data-testid="plan-opening" data-opening-id={o.id} style={editable ? { cursor: 'pointer' } : undefined}>
                 <OpeningSymbol o={o} room={room} k={k} floor={floor} selected={sel?.type === 'opening' && sel.id === o.id} />
@@ -764,7 +781,7 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
             )}
             {cornerSnap && <g data-chrome=""><SnapMarker hit={cornerSnap} k={k} /></g>}
             {guides.length > 0 && (
-              <g data-chrome="" stroke={GUIDE} strokeWidth={1.25 / k} strokeDasharray={`${4 / k} ${3 / k}`} pointerEvents="none">
+              <g data-chrome="" data-testid="plan-guides" stroke={GUIDE} strokeWidth={1.25 / k} strokeDasharray={`${4 / k} ${3 / k}`} pointerEvents="none">
                 {guides.map((g, i) => <line key={i} x1={g.a.x} y1={g.a.y} x2={g.b.x} y2={g.b.y} />)}
               </g>
             )}

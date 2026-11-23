@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { enterRoom, expect, floorPlans, state, test } from './fixtures';
+import { docShot, enterRoom, expect, floorPlans, state, test } from './fixtures';
 
 const card = (page: Page, name: string) => page.getByTestId('plan-card').filter({ has: page.getByTestId('plan-card-name').getByText(name, { exact: true }) });
 const roomNames = async (page: Page) => (await state(page)).project.rooms.map((r) => r.name);
@@ -7,7 +7,7 @@ const roomNames = async (page: Page) => (await state(page)).project.rooms.map((r
 test('floor-plan library: demo, new plan from dimensions, switch, rename, delete, reload', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByTestId('home-empty')).toBeVisible();
-  await page.screenshot({ path: 'docs/screenshots/home-empty.png' });
+  await page.screenshot({ path: docShot('home-empty.png') });
 
   // The demo becomes a saved plan of its own.
   await page.getByTestId('home-demo').click();
@@ -47,7 +47,7 @@ test('floor-plan library: demo, new plan from dimensions, switch, rename, delete
   await page.getByTestId('nav-home').click();
   await expect(page.getByTestId('plan-card')).toHaveCount(2);
   await expect(card(page, 'Our flat').getByTestId('plan-card-meta')).toContainText('2 rooms');
-  await page.screenshot({ path: 'docs/screenshots/home.png' });
+  await page.screenshot({ path: docShot('home.png') });
   await card(page, 'Demo bedroom').getByTestId('plan-card-open').click();
   await expect(page.getByTestId('plan-name')).toHaveText('Demo bedroom');
   expect(await roomNames(page)).toEqual(['Bedroom']);

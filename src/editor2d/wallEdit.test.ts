@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { flushDistance, resizeOpening, slideWall, snapSlide, wallJoin, wallNormal } from './wallEdit';
+import { flushDistance, resizeOpening, sharedChain, slideWall, snapSlide, wallJoin, wallNormal } from './wallEdit';
 import { wallOutline } from './view';
 import type { Room, Vec2 } from '../types';
 
@@ -41,6 +41,20 @@ describe('flushDistance / snapSlide', () => {
     expect(snapSlide(square, 1, 80, [n], 25)).toEqual({ d: 88, link: { roomId: 'n', wall: 3 } });
     expect(snapSlide(square, 1, 40, [n], 25)).toEqual({ d: 40 });
   });
+  it("lines the dragged wall up with a neighbour's wall that faces the same way, with a guide through both", () => {
+    // R's left wall (wall 3, x = 10) sits under N's left wall (inner x = 0): sliding it out by 10 lines them up.
+    const r = box(10, 400, 300, 700);
+    const n = { id: 'n', inner: box(0, 0, 400, 300), outer: wallOutline(box(0, 0, 400, 300), 12) };
+    const s = snapSlide(r, 3, 7, [n], 25, 5, 12);
+    expect(s.d).toBeCloseTo(10);
+    expect(s.link).toBeUndefined();
+    expect(s.guide!.a.x).toBeCloseTo(0);
+    expect(s.guide!.b.x).toBeCloseTo(0);
+    expect(Math.min(s.guide!.a.y, s.guide!.b.y)).toBeCloseTo(0); // runs from N's wall…
+    expect(Math.max(s.guide!.a.y, s.guide!.b.y)).toBeCloseTo(700); // …down R's wall
+    expect(snapSlide(r, 3, 0, [n], 25, 5, 12)).toEqual({ d: 0 }); // 10 cm away: beyond the 5 cm line-up reach
+    expect(snapSlide(box(410, 400, 700, 700), 3, 5, [n], 25, 5, 12).guide).toBeUndefined(); // N's right wall faces the other way
+  });
 });
 
 describe('wallJoin', () => {
@@ -66,5 +80,17 @@ describe('resizeOpening', () => {
     expect(resizeOpening(door, 'b', 600, 400).width).toBe(200); // the door maximum
     expect(resizeOpening({ ...door, offset: 320 }, 'b', 600, 400).width).toBe(120); // 280..400: stops at the wall end
     expect(resizeOpening(door, 'b', 150, 400).width).toBe(60); // the door minimum
+  });
+});
+
+describe('sharedChain', () => {
+  it('follows shared walls through a long wall shared by two rooms; partners slide the other way', () => {
+    // A's wall 1 is shared with B's wall 3 and with C's wall 3. Dragging B's wall moves A's whole wall, so C's must follow.
+    const shared = [{ owner: { room: 0, wall: 1 }, other: { room: 1, wall: 3 } }, { owner: { room: 0, wall: 1 }, other: { room: 2, wall: 3 } }];
+    expect(sharedChain(shared, { room: 1, wall: 3 })).toEqual(expect.arrayContaining([
+      { room: 1, wall: 3, sign: 1 }, { room: 0, wall: 1, sign: -1 }, { room: 2, wall: 3, sign: 1 },
+    ]));
+    expect(sharedChain(shared, { room: 1, wall: 3 })).toHaveLength(3);
+    expect(sharedChain([], { room: 0, wall: 2 })).toEqual([{ room: 0, wall: 2, sign: 1 }]);
   });
 });

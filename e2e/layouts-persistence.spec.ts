@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';
-import { activeItems, activeRoom, dragPlan, enterRoom, expect, expectCanvasRendered, loadDemo, open, sofaPng, state, test } from './fixtures';
+import { docShot, activeItems, activeRoom, dragPlan, enterRoom, expect, expectCanvasRendered, loadDemo, open, sofaPng, state, test } from './fixtures';
 
 test('layouts: add, duplicate, rename, switch, compare', async ({ page }) => {
   await loadDemo(page);
@@ -38,7 +38,7 @@ test('layouts: add, duplicate, rename, switch, compare', async ({ page }) => {
   const plantTransform = (i: number) => panes.nth(i).locator(`[data-testid=plan-item]`).evaluateAll(
     (els) => els.map((e) => e.querySelector('g')!.getAttribute('transform')));
   expect(await plantTransform(0)).not.toEqual(await plantTransform(1));
-  await page.screenshot({ path: 'docs/screenshots/compare.png' });
+  await page.screenshot({ path: docShot('compare.png') });
 
   await page.getByTestId('compare-3d').click();
   const canvases = page.locator('[data-testid=view3d] canvas');

@@ -196,4 +196,73 @@ test('a door placed on a shared wall goes on the owner room only', async ({ page
   const a = await roomNamed(page, 'A'), b = await roomNamed(page, 'B');
   expect(a.openings).toEqual([expect.objectContaining({ kind: 'door', wall: 1 })]);
   expect(b.openings).toEqual([]);
+  // With B selected, A's door on the shared wall still shows (other rooms' openings are drawn too).
+  await page.evaluate((id) => window.__store.getState().focusRoom(id), b.id);
+  await expect(page.locator('[data-testid=plan-other-openings] path')).toHaveCount(1); // the door's swing arc
+});
+
+test('dragging a wall lines it up with a neighbour wall (guide shown); Alt drags freely', async ({ page }) => {
+  await open(page);
+  await addRoom(page, 'A', box(0, 0, 400, 300));
+  await addRoom(page, 'B', box(10, 312, 300, 600)); // below A, its left wall 10 cm in from A's
+  await page.getByTestId('plan-fit').click();
+  const k = await scale(page);
+  const s = await planToScreen(page, { x: 4, y: 450 }), e = await planToScreen(page, { x: 4 - 13 / k, y: 450 }); // ~4 px short of lining up
+  await page.mouse.move(s.x, s.y);
+  await page.mouse.down();
+  await page.mouse.move(e.x, e.y, { steps: 6 });
+  await expect(page.getByTestId('plan-guides')).toHaveCount(1);
+  await page.mouse.up();
+  await expect(page.getByTestId('plan-guides')).toHaveCount(0);
+  let b = await roomNamed(page, 'B');
+  expect(b.points[0].x).toBeCloseTo(0, 5);
+  expect(b.points[3].x).toBeCloseTo(0, 5);
+  await page.keyboard.press('Control+z');
+  // With Alt held the same drag is not pulled into line.
+  await page.mouse.move(s.x, s.y);
+  await page.keyboard.down('Alt');
+  await page.mouse.down();
+  await page.mouse.move(e.x, e.y, { steps: 6 });
+  await page.mouse.up();
+  await page.keyboard.up('Alt');
+  b = await roomNamed(page, 'B');
+  expect(b.points[0].x).not.toBeCloseTo(0, 1);
+});
+
+test('drawing down a neighbour wall stays on its line and meets the room below exactly (no slanted wall)', async ({ page }) => {
+  await open(page);
+  await addRoom(page, 'A', box(0, 0, 300, 600)); // right wall outer face x = 312
+  await addRoom(page, 'C', box(324, 412, 700, 700)); // beside A, top outer face y = 400
+  await page.getByTestId('plan-fit').click();
+  await page.evaluate(() => window.__store.getState().setUI({ tool: 'draw-room' }));
+  const k = await scale(page);
+  const click = async (p: Vec2) => { const q = await planToScreen(page, p); await page.mouse.click(q.x, q.y); };
+  // Wobbly clicks down A's wall, the last one a few px off, near where it meets C.
+  for (const p of [{ x: 312 + 3 / k, y: 100 }, { x: 312 - 4 / k, y: 250 }, { x: 312 + 8 / k, y: 400 - 6 / k }]) await click(p);
+  for (const p of [{ x: 500, y: 400 - 2 / k }, { x: 500, y: 100 }]) await click(p);
+  await click({ x: 312, y: 100 }); // close
+  await expect(page.getByTestId('room-name-input')).toBeFocused();
+  const closet = (await state(page)).project.rooms[2];
+  expect(closet.points).toHaveLength(4);
+  const left = closet.points.filter((p) => p.x < 400);
+  expect(left).toHaveLength(2);
+  for (const p of left) expect(p.x).toBeCloseTo(312, 5); // straight down A's face
+  expect(Math.max(...left.map((p) => p.y))).toBeCloseTo(400, 5); // meets C's top face
+});
+
+test('dragging a wall shared along a longer wall moves the whole joined wall: the third room stays attached', async ({ page }) => {
+  await open(page);
+  await addRoom(page, 'A', box(0, 0, 400, 600)); // its right wall is shared by B (top half) and C (bottom half)
+  await addRoom(page, 'C', box(412, 312, 700, 600));
+  await addRoom(page, 'B', box(412, 0, 700, 300)); // added last: B is the selected room
+  await page.getByTestId('plan-fit').click();
+  await dragPlan(page, { x: 406, y: 150 }, { x: 456, y: 150 }, 8); // B's left wall
+  const a = await roomNamed(page, 'A'), b = await roomNamed(page, 'B'), c = await roomNamed(page, 'C');
+  expect(a.points[1].x).toBeCloseTo(450, 0);
+  expect(b.points[0].x).toBeCloseTo(462, 0);
+  expect(c.points[0].x).toBeCloseTo(462, 0); // C followed, so it is still joined to A
+  expect(c.points[3].x).toBeCloseTo(462, 0);
+  await expect(page.getByTestId('plan-wall-gap')).toHaveCount(0);
+  await page.keyboard.press('Control+z');
+  expect((await roomNamed(page, 'C')).points).toEqual(box(412, 312, 700, 600));
 });

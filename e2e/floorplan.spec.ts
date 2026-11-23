@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import {
-  activeRoom, clickImg, expect, floorPlanPng, imgToScreen, open, PLAN, planToScreen, rectCorners, state, test, traceRoom,
+  docShot, activeRoom, clickImg, expect, floorPlanPng, imgToScreen, open, PLAN, planToScreen, rectCorners, state, test, traceRoom,
   TWO, twoRoomPng, uploadPlan, wallLengths,
 } from './fixtures';
 
@@ -289,7 +289,7 @@ test('floor plan: screenshots of tracing an apartment', async ({ page }) => {
   await page.mouse.move(p.x, p.y, { steps: 4 });
   await expect(page.getByTestId('loupe')).toBeVisible();
   await expect(page.getByTestId('draw-hint')).toContainText('green circle');
-  await page.screenshot({ path: 'docs/screenshots/floorplan.png' });
+  await page.screenshot({ path: docShot('floorplan.png') });
   await page.keyboard.press('Escape'); // drops the outline; still tracing
 
   await traceNamed(page, APT.bedroom, 'Bedroom');
@@ -304,5 +304,5 @@ test('floor plan: screenshots of tracing an apartment', async ({ page }) => {
   await page.getByTestId('floorplan-apply-area').click();
   await page.mouse.move(5, 5);
   await expect(page.getByTestId('plan-room-label')).toHaveCount(6);
-  await page.screenshot({ path: 'docs/screenshots/floorplan-done.png' });
+  await page.screenshot({ path: docShot('floorplan-done.png') });
 });

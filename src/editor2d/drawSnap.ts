@@ -37,6 +37,8 @@ export interface SnapInput {
   pxPerCm: number;
   /** Snapping off (Alt held, or snapping toggled off): the point is exactly the cursor. */
   free?: boolean;
+  /** The neighbour wall the previous point is attached to: near its line, the point stays exactly on it (see snapPoint). */
+  follow?: { roomId: string; wall: number } | null;
 }
 
 const d2 = (a: Vec2, b: Vec2) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -93,9 +95,11 @@ export function facePoints({ inner, outer }: SnapRoom): { p: Vec2; wall: number 
  * ANGLE_TOL_DEG of horizontal/vertical locks to it (right-angle assist) and only its free coordinate snaps; beyond that the
  * point follows the mouse.
  */
-export function snapPoint({ raw, prev, align, rooms, ink, pxPerCm, free }: SnapInput): SnapHit {
+export function snapPoint({ raw, prev, align, rooms, ink, pxPerCm, free, follow }: SnapInput): SnapHit {
   if (free || !(pxPerCm > 0)) return NONE(raw);
   const t = SNAP_PX / pxPerCm, tw = WALL_SNAP_PX / pxPerCm;
+  const along = follow && followLine(raw, follow, rooms, tw);
+  if (along) return along;
   const srcs = [...align, ...rooms.flatMap((r) => r.inner)];
   // Right-angle lock: the coordinate across the wall is fixed to prev's, only the one along it snaps.
   const dx = prev ? Math.abs(raw.x - prev.x) : 0, dy = prev ? Math.abs(raw.y - prev.y) : 0;
@@ -153,6 +157,34 @@ export function snapPoint({ raw, prev, align, rooms, ink, pxPerCm, free }: SnapI
   if (!cands.length) return NONE(raw);
   const best = cands.reduce((a, b) => (b.d < a.d - 1e-9 ? b : a)); // ties keep the earlier (corner > wall > axis)
   return { p: best.p, kind: best.kind, guides: best.guides, ...(best.link && { link: best.link }) };
+}
+
+/**
+ * Drawing along a neighbour's wall: while the cursor is within `tw` of that wall's outer-face LINE (also past the wall's
+ * end), the point stays exactly on the line, so the wall being drawn stays straight. Where the line crosses another room's
+ * outer face within `tw`, the point lands on that crossing (a corner flush with both). Null when the cursor left the line.
+ */
+function followLine(raw: Vec2, follow: { roomId: string; wall: number }, rooms: SnapRoom[], tw: number): SnapHit | null {
+  const r = rooms.find((x) => x.id === follow.roomId);
+  if (!r || r.outer.length < 3) return null;
+  const a = r.outer[follow.wall], b = r.outer[(follow.wall + 1) % r.outer.length], L = d2(a, b);
+  if (L < 1e-9) return null;
+  const ux = (b.x - a.x) / L, uy = (b.y - a.y) / L, s = (raw.x - a.x) * ux + (raw.y - a.y) * uy;
+  const q = { x: a.x + ux * s, y: a.y + uy * s };
+  if (d2(q, raw) > tw) return null;
+  let best: SnapHit | null = null, bd = tw;
+  for (const o of rooms) {
+    if (o.id === follow.roomId || o.outer.length < 3) continue; // its own corner would be the outer corner: a step
+    o.outer.forEach((c, w) => {
+      const e = o.outer[(w + 1) % o.outer.length], ex = e.x - c.x, ey = e.y - c.y, den = ux * ey - uy * ex;
+      if (Math.abs(den) < 1e-9) return; // parallel: no crossing
+      const sl = ((c.x - a.x) * ey - (c.y - a.y) * ex) / den, se = ((c.x - a.x) * uy - (c.y - a.y) * ux) / den;
+      if (se < -1e-9 || se > 1 + 1e-9) return;
+      const x = { x: a.x + ux * sl, y: a.y + uy * sl }, d = d2(x, raw);
+      if (d <= bd) { bd = d; best = { p: x, kind: 'wall', guides: [], link: { roomId: o.id, wall: w } }; }
+    });
+  }
+  return best ?? { p: q, kind: 'wall', guides: [], link: follow };
 }
 
 /** Interior angle at corner `c` between the walls to `a` and to `b`, in degrees (0..180); null for a zero-length wall. */

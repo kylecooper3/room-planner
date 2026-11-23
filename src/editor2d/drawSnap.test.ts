@@ -185,3 +185,23 @@ describe('cornerAngle / isRightAngle', () => {
     expect(cornerAngle(o, o, { x: 0, y: 100 })).toBeNull();
   });
 });
+
+describe('snapPoint while drawing along an attached neighbour wall (follow)', () => {
+  const base = { align: [] as { x: number; y: number }[], pxPerCm: 1 }; // the wall reach (25 px) is 25 cm
+  // thick's right wall (wall 1): outer face x = 410. Room c below it: top outer face y = 320, crossing that line at (410, 320).
+  const cIn = [{ x: 380, y: 330 }, { x: 800, y: 330 }, { x: 800, y: 600 }, { x: 380, y: 600 }];
+  const c = { id: 'c', inner: cIn, outer: wallOutline(cIn, 10) };
+  const follow = { roomId: 'thick', wall: 1 };
+  it('stays exactly on the wall line, also past the wall end', () => {
+    expect(snapPoint({ ...base, raw: { x: 418, y: 150 }, prev: { x: 410, y: 20 }, rooms: [thick, c], follow })).toMatchObject({ p: { x: 410, y: 150 }, link: follow });
+  });
+  it('lands on the crossing with another room outer face (a corner flush with both)', () => {
+    const h = snapPoint({ ...base, raw: { x: 395, y: 333 }, prev: { x: 410, y: 20 }, rooms: [thick, c], follow });
+    expect(h.p.x).toBeCloseTo(410);
+    expect(h.p.y).toBeCloseTo(320);
+    expect(h.link).toEqual({ roomId: 'c', wall: 0 });
+  });
+  it('lets go once the cursor is away from the line', () => {
+    expect(snapPoint({ ...base, raw: { x: 450, y: 150 }, prev: { x: 410, y: 20 }, rooms: [thick, c], follow }).link).not.toEqual(follow);
+  });
+});
