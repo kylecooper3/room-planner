@@ -26,9 +26,12 @@ export function housePassages(rooms: Pick<Room, 'points' | 'openings' | 'wallThi
 /**
  * Shared walls are built once in 3D, like in 2D: for each room, full-height cut-outs over the stretches of its walls that
  * another (earlier) room owns, so only the owner's wall stands there. Index = room index; pass each room its own list.
+ * `full`: per room, the walls a neighbour builds along their whole length (for buildWalls' `neighbourWalls`).
+ * `shared`: per room, its walls that stand for both rooms (it owns a shared stretch on them): cutaway never hides those —
+ * a shared wall is always the far wall of one of the two rooms.
  */
-export function sharedWallCuts(rooms: Pick<Room, 'points' | 'wallThickness'>[]): Passage[][] {
-  const out: Passage[][] = rooms.map(() => []);
+export function sharedWallCuts(rooms: Pick<Room, 'points' | 'wallThickness'>[]): { cuts: Passage[]; full: Set<number>; shared: Set<number> }[] {
+  const out = rooms.map(() => ({ cuts: [] as Passage[], full: new Set<number>(), shared: new Set<number>() }));
   for (const s of sharedStretches(rooms.map((r) => ({ inner: r.points, outer: wallOutline(r.points, r.wallThickness) })))) {
     const o = rooms[s.owner.room], other = rooms[s.other.room];
     const p = wallOutline(o.points, o.wallThickness), a = p[s.owner.wall], b = p[(s.owner.wall + 1) % p.length];
@@ -38,7 +41,10 @@ export function sharedWallCuts(rooms: Pick<Room, 'points' | 'wallThickness'>[]):
     const off = { x: a.x - ia.x, y: a.y - ia.y }, n = { x: -dir.y, y: dir.x };
     const shift = off.x * n.x + off.y * n.y; // owner inner line → outer face, across the wall
     const m = at((s.from + s.to) / 2);
-    out[s.other.room].push({
+    out[s.owner.room].shared.add(s.owner.wall);
+    const op = other.points, oa = op[s.other.wall], ob = op[(s.other.wall + 1) % op.length];
+    if (s.to - s.from >= Math.hypot(ob.x - oa.x, ob.y - oa.y) - 0.5) out[s.other.room].full.add(s.other.wall);
+    out[s.other.room].cuts.push({
       center: { x: m.x + n.x * shift, y: m.y + n.y * shift }, dir, n, halfW: (s.to - s.from) / 2,
       halfD: other.wallThickness + 1, bottom: 0, top: Infinity,
     });

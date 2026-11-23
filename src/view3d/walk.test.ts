@@ -87,13 +87,31 @@ describe('door passages', () => {
 
 describe('sharedWallCuts', () => {
   it('builds a shared wall once: the later room wall is cut out where the earlier room owns it', () => {
-    const [cutsA, cutsB] = sharedWallCuts([A, B]); // B's left wall (x = 412) lies on A's right wall outer face
+    const [{ cuts: cutsA, full: fullA, shared: sharedA }, { cuts: cutsB, full: fullB }] = sharedWallCuts([A, B]); // B's left wall (x = 412) lies on A's right wall outer face
     expect(cutsA).toEqual([]);
     expect(cutsB).toHaveLength(1);
+    expect([...fullA]).toEqual([]);
+    expect([...fullB]).toEqual([3]); // B's whole left wall is A's
+    expect([...sharedA]).toEqual([1]); // A's right wall stands for both rooms: cutaway keeps it
+    // Walls meeting it are not extended past B's corners (nothing pokes past A's wall).
+    const bw = buildWalls(B, cutsB, fullB);
+    expect(bw[0].ext0).toBe(0); // top wall, at the corner with the left wall
+    expect(bw[2].ext1).toBe(0); // bottom wall, same
+    expect(bw[0].ext1).toBeCloseTo(12); // its far (90°) corner is mitred as before
     const solid = (w: { pieces: { u0: number; u1: number }[] }) => w.pieces.reduce((s, p) => s + p.u1 - p.u0, 0);
     const bLeft = buildWalls(B, cutsB)[3];
     expect(solid(bLeft)).toBeLessThan(1); // nothing left of B's shared wall
     expect(solid(buildWalls(B, cutsB)[1])).toBeGreaterThan(299); // its other walls stay
     expect(solid(buildWalls(A, cutsA)[1])).toBeGreaterThan(299); // A's (owner) wall stays whole
+  });
+});
+
+describe('3D corner mitres', () => {
+  it('extend the outer face by t at 90°, less at an obtuse corner (no wall end poking past the next wall)', () => {
+    const cut = room('C', [{ x: 0, y: 0 }, { x: 300, y: 0 }, { x: 400, y: 100 }, { x: 400, y: 300 }, { x: 0, y: 300 }]); // 135° corners at the cut
+    const w = buildWalls(cut);
+    expect(w[0].ext0).toBeCloseTo(12); // 90°
+    expect(w[0].ext1).toBeCloseTo(12 / Math.tan((135 * Math.PI) / 360)); // 135°: ≈ 4.97, not 12
+    expect(w[1].ext0).toBeCloseTo(w[0].ext1);
   });
 });

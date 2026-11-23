@@ -42,7 +42,7 @@ export interface WallInfo {
   side: 1 | -1;
   normalIn: Vec2;
   mid: Vec2;
-  /** Extra length (cm) at each end to close convex outer corners. */
+  /** How far (cm) the outer face runs past each end to close a convex outer corner (the mitre: a wedge, not a box). */
   ext0: number;
   ext1: number;
   pieces: WallPiece[];
@@ -55,8 +55,12 @@ const signedArea = (pts: Vec2[]) => {
   return s / 2;
 };
 
-/** `passages`: door passages of the whole house; any that cross this room's walls are cut out of them too. */
-export function buildWalls(room: Pick<Room, 'points' | 'openings' | 'wallThickness' | 'ceilingHeight'>, passages: Passage[] = []): WallInfo[] {
+/**
+ * `passages`: door passages of the whole house; any that cross this room's walls are cut out of them too.
+ * `neighbourWalls`: walls lying wholly along a neighbour's wall (the neighbour builds that wall): neither they nor the walls
+ * meeting them are extended past the corner, so no wall end pokes out where the neighbour's wall already stands.
+ */
+export function buildWalls(room: Pick<Room, 'points' | 'openings' | 'wallThickness' | 'ceilingHeight'>, passages: Passage[] = [], neighbourWalls: ReadonlySet<number> = new Set()): WallInfo[] {
   const pts = room.points, n = pts.length;
   if (n < 3) return [];
   const side: 1 | -1 = signedArea(pts) > 0 ? 1 : -1;
@@ -67,6 +71,14 @@ export function buildWalls(room: Pick<Room, 'points' | 'openings' | 'wallThickne
     return cross * side > 0;
   };
   const t = room.wallThickness;
+  // How far the outer face runs past the inner corner to the true (mitred) corner: t / tan(θ/2) for interior angle θ —
+  // exactly t at 90°, less at obtuse corners (a full t there would poke past the next wall), capped at sharp ones.
+  const miter = (k: number) => {
+    const c = pts[k], p = pts[(k - 1 + n) % n], q = pts[(k + 1) % n];
+    const ux = p.x - c.x, uy = p.y - c.y, vx = q.x - c.x, vy = q.y - c.y, l = Math.hypot(ux, uy) * Math.hypot(vx, vy);
+    const theta = l ? Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy) / l))) : Math.PI / 2;
+    return Math.min(4 * t, t / Math.tan(theta / 2));
+  };
   return pts.map((a, i) => {
     const b = pts[(i + 1) % n];
     const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy) || 1;
@@ -84,7 +96,8 @@ export function buildWalls(room: Pick<Room, 'points' | 'openings' | 'wallThickne
       index: i, a, length, angle: Math.atan2(dy, dx), side,
       normalIn: { x: (-dy / length) * side, y: (dx / length) * side },
       mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
-      ext0: convex(i) ? t : 0, ext1: convex((i + 1) % n) ? t : 0,
+      ext0: convex(i) && !neighbourWalls.has(i) && !neighbourWalls.has((i - 1 + n) % n) ? miter(i) : 0,
+      ext1: convex((i + 1) % n) && !neighbourWalls.has(i) && !neighbourWalls.has((i + 1) % n) ? miter((i + 1) % n) : 0,
       pieces: splitWall(length, room.ceilingHeight, holes),
       openings,
     };

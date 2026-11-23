@@ -35,6 +35,23 @@ function WallBox({ size, pos, color, cap }: { size: [number, number, number]; po
   return <mesh geometry={unitBox} scale={size} position={pos} material={mats} castShadow receiveShadow />;
 }
 
+/**
+ * A corner wedge: the triangle between a wall's end and the mitred corner (wall-local plan cm: [u along the wall, z across]),
+ * full height, dark top like the wall caps. Two neighbouring wedges fill a convex corner at any angle.
+ */
+function WallWedge({ tri, height, color }: { tri: [number, number][]; height: number; color: string }) {
+  const key = JSON.stringify(tri);
+  const geo = useMemo(() => {
+    const g = new THREE.ExtrudeGeometry(new THREE.Shape(tri.map(([u, z]) => new THREE.Vector2(u * M, -z * M))), { depth: height * M, bevelEnabled: false });
+    g.rotateX(-Math.PI / 2); // shape plane → floor, extruded up
+    return g;
+  }, [key, height]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => geo.dispose(), [geo]);
+  // ExtrudeGeometry groups: 0 = the two triangle faces (top, bottom), 1 = the sides.
+  const mats = useMemo(() => [getSurfaceMaterial(THEME.planWall, 'paint'), getSurfaceMaterial(color, 'paint')], [color]);
+  return <mesh geometry={geo} material={mats} castShadow receiveShadow />;
+}
+
 /** Plan polygon → ShapeGeometry lying on the floor (use with rotation-x = -π/2); UVs are in metres. */
 export function floorShape(points: Vec2[]): THREE.ShapeGeometry {
   return new THREE.ShapeGeometry(new THREE.Shape(points.map((p) => new THREE.Vector2(p.x * M, -p.y * M))));
@@ -99,12 +116,16 @@ interface RoomShellProps {
   room: Room; cutaway: boolean;
   /** Door passages of the whole house: cut out of this room's walls wherever they cross them. */
   passages?: Passage[];
+  /** Walls a neighbour builds along their whole length (buildWalls' `neighbourWalls`). */
+  neighbourWalls?: ReadonlySet<number>;
+  /** Walls cutaway never hides (shared with a neighbour: always the far wall of one of the two rooms). */
+  alwaysShown?: ReadonlySet<number>;
   onFloorClick?: (e: ThreeEvent<MouseEvent>) => void;
   onFloorDoubleClick?: (e: ThreeEvent<MouseEvent>) => void;
 }
 
-export function RoomShell({ room, cutaway, passages, onFloorClick, onFloorDoubleClick }: RoomShellProps) {
-  const walls = useMemo(() => buildWalls(room, passages), [room.points, room.openings, room.wallThickness, room.ceilingHeight, passages]);
+export function RoomShell({ room, cutaway, passages, neighbourWalls, alwaysShown, onFloorClick, onFloorDoubleClick }: RoomShellProps) {
+  const walls = useMemo(() => buildWalls(room, passages, neighbourWalls), [room.points, room.openings, room.wallThickness, room.ceilingHeight, passages, neighbourWalls]);
   const floorGeo = useMemo(() => floorShape(room.points), [room.points]);
   useEffect(() => () => floorGeo.dispose(), [floorGeo]);
   const tex = useMemo(() => floorTexture(room.floor), [room.floor]);
@@ -116,7 +137,7 @@ export function RoomShell({ room, cutaway, passages, onFloorClick, onFloorDouble
     for (let i = 0; i < walls.length; i++) {
       const r = refs.current[i];
       if (!r?.full || !r.kerb) continue;
-      const hide = cutaway && wallFacesAway(walls[i], cx, cy);
+      const hide = cutaway && !alwaysShown?.has(i) && wallFacesAway(walls[i], cx, cy);
       r.full.visible = !hide;
       r.kerb.visible = hide;
     }
@@ -136,12 +157,12 @@ export function RoomShell({ room, cutaway, passages, onFloorClick, onFloorDouble
         return (
           <group key={i} position={[w.a.x * M, 0, w.a.y * M]} rotation-y={-w.angle}>
             <group ref={(g) => { (refs.current[i] ??= { full: null, kerb: null }).full = g; }}>
-              {w.ext0 > 0 && piece(-w.ext0, 0, 0, H, 'e0')}
+              {w.ext0 > 0 && <WallWedge tri={[[0, 0], [0, -w.side * t], [-w.ext0, -w.side * t]]} height={H} color={color} />}
               {w.pieces.map((p, j) => piece(p.u0, p.u1, p.y0, p.y1, String(j)))}
               {w.pieces.map((p, j) => p.y0 === 0 && p.y1 > BASE_H && p.u1 - p.u0 > 2 && (
                 <Box key={`b${j}`} size={[(p.u1 - p.u0) * M, BASE_H * M, BASE_T * M]} pos={[(p.u0 + p.u1) / 2 * M, BASE_H / 2 * M, zb]} color={FRAME_COLOR} />
               ))}
-              {w.ext1 > 0 && piece(w.length, w.length + w.ext1, 0, H, 'e1')}
+              {w.ext1 > 0 && <WallWedge tri={[[w.length, 0], [w.length, -w.side * t], [w.length + w.ext1, -w.side * t]]} height={H} color={color} />}
               {w.openings.map((o) =>
                 o.kind === 'open' ? null
                 : o.kind === 'door' ? <Door key={o.id} o={o} w={w} t={t} />

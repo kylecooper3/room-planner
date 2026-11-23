@@ -615,7 +615,10 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
         return { s0: Math.min(along(f), along(t)), s1: Math.max(along(f), along(t)), ownerBand: [f, t, add(t, on, o.wallThickness), add(f, on, o.wallThickness)] };
       }).sort((x, y) => x.s0 - y.s0);
       const nW = wallNormal(r.points, i);
-      const edgeAt = (t: number, out: boolean) => (t <= 0 ? (out ? outer[i] : a) : t >= L ? (out ? outer[j] : b) : add(add(a, { x: ux, y: uy }, t), nW, out ? r.wallThickness : 0));
+      // Next to a wall a neighbour builds along its whole length, this wall ends square at the corner (no outer corner poking out).
+      const neighbourBuilt = (w: number) => { const l = dist(r.points[w], r.points[(w + 1) % n]); return shared.some((s) => s.other.room === ri && s.other.wall === w && s.to - s.from >= l - 0.5); };
+      const end0 = neighbourBuilt((i - 1 + n) % n) ? add(a, nW, r.wallThickness) : outer[i], end1 = neighbourBuilt(j) ? add(b, nW, r.wallThickness) : outer[j];
+      const edgeAt = (t: number, out: boolean) => (t <= 0 ? (out ? end0 : a) : t >= L ? (out ? end1 : b) : add(add(a, { x: ux, y: uy }, t), nW, out ? r.wallThickness : 0));
       const pieces: [number, number][] = [];
       let t0 = 0;
       for (const cut of cuts) { if (cut.s0 > t0) pieces.push([t0, cut.s0]); t0 = Math.max(t0, cut.s1); }
