@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Room, UnitSystem, Vec2 } from '../types';
 import { THEME } from '../theme';
 import { useStore } from '../store/store';
-import { polygonArea, polygonCentroid, projectOnWalls } from '../core/geometry';
+import { mergeCollinear, polygonArea, polygonCentroid, projectOnWalls } from '../core/geometry';
 import { formatArea, formatLength } from '../core/units';
 import { useTrace } from '../floorplan/traceSession';
+import { fitToInk } from '../floorplan/inkMask';
 import { DrawHud, Loupe } from './DrawAids';
 import { RoomNamePopover } from './RoomNamePopover';
 import { cornerAngle, isRightAngle, snapPoint } from './drawSnap';
@@ -29,12 +30,19 @@ export function useDrawRoom({ tool, readOnly, cursor, rooms, snapRooms, ink, k, 
   k: number; units: UnitSystem; view: View; vw: number; vh: number; namingRoomId: string | null;
 }) {
   const [drawPts, setDrawPts] = useState<Vec2[]>([]);
+  /** The neighbour wall ("roomId:wall") each drawn point was snapped onto. */
+  const linkOf = useRef(new WeakMap<Vec2, string>());
+  const overPlan = useStore((s) => !!s.project.underlay?.visible);
 
   // ── draw-room tool: stays on after each room (the name popover opens); Done / Esc ends it ──
-  const finishDraw = (points: Vec2[]) => {
+  const finishDraw = (clicked: Vec2[]) => {
+    // Extra clicks along one straight line make a single wall, not several that move separately.
+    const points = mergeCollinear(clicked);
     if (points.length < 3) return;
     const st = useStore.getState();
-    st.setUI({ namingRoomId: st.addRoom({ points }) });
+    // Over a plan image: walls move onto the inner edge of the ink lines they were drawn on (attached walls stay exact).
+    const fit = ink?.band ? fitToInk(points, ink.band, points.map((a, i) => attached(a, points[(i + 1) % points.length]))) : null;
+    st.setUI({ namingRoomId: st.addRoom(fit ? { ...fit, points: mergeCollinear(fit.points) } : { points }) });
     setDrawPts([]);
   };
   const doneDraw = () => {
@@ -60,20 +68,28 @@ export function useDrawRoom({ tool, readOnly, cursor, rooms, snapRooms, ink, k, 
   const drawSnap = (raw: Vec2, free: boolean): SnapHit => snapPoint({
     raw, prev: drawPts[drawPts.length - 1], align: drawPts.slice(0, -1), rooms: snapRooms, ink, pxPerCm: k, free,
   });
+  // A point on the same neighbour wall as the last two extends that wall instead of adding a corner.
+  const extendsWall = ({ link }: SnapHit) => {
+    const key = link && `${link.roomId}:${link.wall}`, n = drawPts.length;
+    return !!key && n >= 2 && linkOf.current.get(drawPts[n - 1]) === key && linkOf.current.get(drawPts[n - 2]) === key;
+  };
   const closes = (raw: Vec2) => drawPts.length >= 3 && dist(raw, drawPts[0]) * k < CLOSE_PX;
   const addDrawPoint = (raw: Vec2, free: boolean) => {
     if (closes(raw)) { finishDraw(drawPts); return; }
-    const { p } = drawSnap(raw, free);
+    const hit = drawSnap(raw, free), { p, link } = hit;
     if (drawPts.length && dist(p, drawPts[drawPts.length - 1]) < 1e-9) return; // 2nd click of a double-click
-    setDrawPts([...drawPts, p]);
+    if (link) linkOf.current.set(p, `${link.roomId}:${link.wall}`);
+    setDrawPts([...(extendsWall(hit) ? drawPts.slice(0, -1) : drawPts), p]);
   };
 
   // Draw-room overlay
-  const last = drawPts[drawPts.length - 1];
   const closing = tool === 'draw-room' && !!cursor && closes(cursor.p);
   const live = tool === 'draw-room' && cursor && !closing ? drawSnap(cursor.p, cursor.free) : null;
+  // Extending a neighbour's wall: the preview runs on from the corner before, as one segment.
+  const base = live && extendsWall(live) ? drawPts.slice(0, -1) : drawPts;
+  const last = base[base.length - 1];
   const end = closing ? drawPts[0] : live?.p ?? null;
-  const outline = end ? [...drawPts, end] : drawPts;
+  const outline = end ? [...base, end] : base;
   const drawMeasure = last && end
     ? `${formatLength(dist(last, end), units)}${outline.length >= 3 ? ` · area ${formatArea(polygonArea(outline), units)}` : ''}`
     : null;
@@ -84,7 +100,7 @@ export function useDrawRoom({ tool, readOnly, cursor, rooms, snapRooms, ink, k, 
   const corners: { a: Vec2; c: Vec2; b: Vec2 }[] = [];
   for (let i = 1; i < outline.length - 1; i++) corners.push({ a: outline[i - 1], c: outline[i], b: outline[i + 1] });
   if (closing && drawPts.length >= 3) corners.push({ a: drawPts[drawPts.length - 1], c: drawPts[0], b: drawPts[1] });
-  const liveAngle = last && end && drawPts.length >= 2 ? cornerAngle(drawPts[drawPts.length - 2], last, end) : null;
+  const liveAngle = last && end && base.length >= 2 ? cornerAngle(base[base.length - 2], last, end) : null;
   const rightMark = ({ a, c, b }: { a: Vec2; c: Vec2; b: Vec2 }, key: number) => {
     if (!isRightAngle(cornerAngle(a, c, b))) return null;
     const s = 12 / k, u = norm(a, c), v = norm(b, c);
@@ -116,7 +132,7 @@ export function useDrawRoom({ tool, readOnly, cursor, rooms, snapRooms, ink, k, 
         {corners.map(rightMark)}
         {liveAngle !== null && !closing && (() => {
           const square = isRightAngle(liveAngle);
-          const out = norm({ x: 2 * last.x - (drawPts[drawPts.length - 2].x + end!.x) / 2, y: 2 * last.y - (drawPts[drawPts.length - 2].y + end!.y) / 2 }, last);
+          const out = norm({ x: 2 * last.x - (base[base.length - 2].x + end!.x) / 2, y: 2 * last.y - (base[base.length - 2].y + end!.y) / 2 }, last);
           return (
             <g data-testid="draw-angle" data-square={square ? 'true' : 'false'}>
               <Label at={{ x: last.x + out.x * 22 / k, y: last.y + out.y * 22 / k }} k={k} fill={square ? OK : ACCENT} weight={600} bg="#ffffff">{`${Math.round(liveAngle)}°`}</Label>
@@ -141,7 +157,7 @@ export function useDrawRoom({ tool, readOnly, cursor, rooms, snapRooms, ink, k, 
     <>
       {tool === 'draw-room' && !readOnly && (
         <>
-          <DrawHud count={drawPts.length} next={rooms.length > 0} free={!!cursor?.free} canFinish={drawPts.length >= 3} measure={drawMeasure}
+          <DrawHud count={drawPts.length} next={rooms.length > 0} overPlan={overPlan} free={!!cursor?.free} canFinish={drawPts.length >= 3} measure={drawMeasure}
             onUndo={() => setDrawPts((p) => p.slice(0, -1))} onFinish={() => finishDraw(drawPts)} onDone={doneDraw} />
           {cursor && <Loupe center={end ?? cursor.p} k={k} view={view} pane={{ w: vw, h: vh }}>{loupeContent}</Loupe>}
         </>

@@ -3,7 +3,7 @@ import type { Opening, Vec2 } from '../types';
 import {
   clearancePolygon, clipToConvex, distancesToWalls, doorSwingPolygon, getOpeningGeometry, itemPolygon, localToPlan, pointInPolygon,
   polygonArea, polygonCentroid, polygonInsideRoom, polygonsIntersect, projectOnWalls, rectRoomPoints, snapItem,
-  wallNearMisses, wallSegments,
+  mergeCollinear, sharedStretches, wallNearMisses, wallSegments,
 } from './geometry';
 
 const near = (p: Vec2, q: Vec2) => { expect(p.x).toBeCloseTo(q.x, 6); expect(p.y).toBeCloseTo(q.y, 6); };
@@ -160,13 +160,14 @@ describe('clipToConvex', () => {
   });
 });
 
+// Axis-aligned rooms with 10 cm walls: the outer face is the outline pushed 10 cm out.
+const box = (x0: number, y0: number, x1: number, y1: number, t = 10) => ({
+  inner: [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }],
+  outer: [{ x: x0 - t, y: y0 - t }, { x: x1 + t, y: y0 - t }, { x: x1 + t, y: y1 + t }, { x: x0 - t, y: y1 + t }],
+});
+const a = box(0, 0, 400, 300); // outer face on the right at x = 410
+
 describe('wallNearMisses', () => {
-  // Axis-aligned rooms with 10 cm walls: the outer face is the outline pushed 10 cm out.
-  const box = (x0: number, y0: number, x1: number, y1: number, t = 10) => ({
-    inner: [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }],
-    outer: [{ x: x0 - t, y: y0 - t }, { x: x1 + t, y: y0 - t }, { x: x1 + t, y: y1 + t }, { x: x0 - t, y: y1 + t }],
-  });
-  const a = box(0, 0, 400, 300); // outer face on the right at x = 410
   test("a room drawn on the neighbour's outer face (or within 0.5 cm of it) is attached: nothing to mark", () => {
     expect(wallNearMisses([a, box(410, 0, 600, 300)])).toEqual([]);
     expect(wallNearMisses([a, box(410.4, 0, 600, 300)])).toEqual([]);
@@ -190,4 +191,31 @@ describe('wallNearMisses', () => {
     expect(wallNearMisses([a, tilted])).toEqual([]);
     expect(wallNearMisses([a, box(420, -5, 600, 300)]).every((m) => m.from.a.x === m.from.b.x)).toBe(true); // tops are parallel, same way
   });
+});
+
+describe('sharedStretches', () => {
+  test("a room drawn on the neighbour's outer face shares that wall; the first room owns it", () => {
+    expect(sharedStretches([a, box(410, 0, 600, 300)])).toEqual([{ owner: { room: 0, wall: 1 }, other: { room: 1, wall: 3 }, from: 0, to: 300 }]);
+    expect(sharedStretches([box(410, 0, 600, 300), a])).toEqual([{ owner: { room: 0, wall: 3 }, other: { room: 1, wall: 1 }, from: 0, to: 300 }]);
+  });
+  test('partial overlap: only where both walls run', () => {
+    expect(sharedStretches([a, box(410.3, 100, 600, 500)])).toEqual([expect.objectContaining({ owner: { room: 0, wall: 1 }, from: 100, to: 300 })]);
+  });
+  test("walls of different thickness: the thinner room on the thicker one's face", () => {
+    expect(sharedStretches([box(0, 0, 400, 300, 20), box(420, 0, 600, 300, 5)])).toEqual([expect.objectContaining({ from: 0, to: 300 })]);
+    expect(sharedStretches([box(0, 0, 400, 300, 5), box(405, 50, 600, 300, 20)])).toEqual([expect.objectContaining({ from: 50, to: 300 })]);
+  });
+  test("walls not on each other's face share nothing", () => {
+    expect(sharedStretches([a, box(411, 0, 600, 300)])).toEqual([]);
+    expect(sharedStretches([a, box(400, 0, 600, 300)])).toEqual([]); // walls overlapping, lines apart by the wall
+    expect(sharedStretches([a, box(410, 300, 600, 500)])).toEqual([]); // only touching at a corner
+  });
+});
+
+test('mergeCollinear drops extra corners along a straight wall, keeps real corners', () => {
+  const sq = [{ x: 0, y: 0 }, { x: 150, y: 1 }, { x: 300, y: 0 }, { x: 300, y: 200 }, { x: 300, y: 400 }, { x: 0, y: 400 }];
+  expect(mergeCollinear(sq)).toEqual([{ x: 0, y: 0 }, { x: 300, y: 0 }, { x: 300, y: 400 }, { x: 0, y: 400 }]);
+  const angled = [{ x: 0, y: 0 }, { x: 200, y: 0 }, { x: 250, y: 50 }, { x: 250, y: 300 }, { x: 0, y: 300 }]; // a real 45° corner
+  expect(mergeCollinear(angled)).toEqual(angled);
+  expect(mergeCollinear([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 0, y: 1 }])).toHaveLength(3); // never below 3
 });

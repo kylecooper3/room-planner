@@ -5,11 +5,12 @@ import type { Vec2 } from '../types';
 import { Check, Undo2 } from 'lucide-react';
 import { THEME } from '../theme';
 
-/** Floating bar shown while the draw-room tool is active: the hint, then Done (no outline yet) or Undo point / Finish room. `next`: rooms already exist. */
-export function DrawHud({ count, next, free, canFinish, measure, onUndo, onFinish, onDone }: {
-  count: number; next: boolean; free: boolean; canFinish: boolean; measure: string | null; onUndo(): void; onFinish(): void; onDone(): void;
+/** Floating bar shown while the draw-room tool is active: the hint, then Done (no outline yet) or Undo point / Finish room. `next`: rooms already exist; `overPlan`: tracing a visible plan image. */
+export function DrawHud({ count, next, overPlan, free, canFinish, measure, onUndo, onFinish, onDone }: {
+  count: number; next: boolean; overPlan: boolean; free: boolean; canFinish: boolean; measure: string | null; onUndo(): void; onFinish(): void; onDone(): void;
 }) {
-  const hint = count === 0 ? `Click the first corner of the ${next ? 'next ' : ''}room`
+  const hint = overPlan && count < 3 ? "Click on the plan's wall lines at each corner"
+    : count === 0 ? `Click the first corner of the ${next ? 'next ' : ''}room`
     : count < 3 ? 'Click the next corner — snaps when close (hold Alt for no snapping)'
       : 'Click the green circle or press Enter to finish';
   return (

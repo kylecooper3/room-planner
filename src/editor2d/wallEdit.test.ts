@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { flushDistance, slideWall, snapSlide, wallJoin, wallNormal } from './wallEdit';
+import { flushDistance, resizeOpening, slideWall, snapSlide, wallJoin, wallNormal } from './wallEdit';
 import { wallOutline } from './view';
 import type { Room, Vec2 } from '../types';
 
@@ -52,5 +52,19 @@ describe('wallJoin', () => {
     expect(j?.points[2]).toEqual({ x: 408, y: 300 });
     expect(wallJoin([a, b], 'a', 3)).toBeNull();
     expect(wallJoin([a, room('b', box(412, 0, 700, 300))], 'a', 1)).toBeNull(); // attached
+  });
+});
+
+describe('resizeOpening', () => {
+  it('moves one end, keeps the other; stays on the wall and within the kind width range', () => {
+    const gap = { kind: 'open' as const, offset: 200, width: 100 }; // ends at 150 and 250 on a 400 cm wall
+    expect(resizeOpening(gap, 'b', 330, 400)).toEqual({ width: 180, offset: 240 });
+    expect(resizeOpening(gap, 'a', 20, 400)).toEqual({ width: 230, offset: 135 });
+    expect(resizeOpening(gap, 'a', -80, 400)).toEqual({ width: 250, offset: 125 }); // stops at the wall start
+    expect(resizeOpening(gap, 'b', 140, 400).width).toBe(10); // past the other end: the kind's minimum
+    const door = { kind: 'door' as const, offset: 200, width: 80 }; // 160..240
+    expect(resizeOpening(door, 'b', 600, 400).width).toBe(200); // the door maximum
+    expect(resizeOpening({ ...door, offset: 320 }, 'b', 600, 400).width).toBe(120); // 280..400: stops at the wall end
+    expect(resizeOpening(door, 'b', 150, 400).width).toBe(60); // the door minimum
   });
 });

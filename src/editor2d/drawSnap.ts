@@ -1,12 +1,19 @@
 import type { Segment, Vec2 } from '../types';
-import { pointInPolygon, projectOnWalls } from '../core/geometry';
+import { pointInPolygon, projectOnWalls, WALL_COINCIDE_TOL } from '../core/geometry';
 
 /** Why the cursor jumped: drawn as a small coloured marker so the user can tell. */
 export type SnapKind = 'corner' | 'wall' | 'align' | 'ink' | 'angle';
 /** `link`: the neighbour wall a 'wall' hit landed on (room id + wall index), for the "attached" highlight. */
 export interface SnapHit { p: Vec2; kind: SnapKind | null; guides: Segment[]; link?: { roomId: string; wall: number } }
-/** Nearest ink/paper boundary of the floor-plan image along `axis` through p, within maxCm; the plan coordinate or null. */
-export type InkSnap = (p: Vec2, axis: 'x' | 'y', maxCm: number) => number | null;
+/** The wall band of ink on the line p + t·dir (dir a unit vector) that p sits on, as t offsets in cm (lo < hi); or null. */
+export type BandAt = (p: Vec2, dir: Vec2) => { lo: number; hi: number } | null;
+/**
+ * Centre line of the floor-plan image's nearest wall band along `axis` through p (p on the band or within maxCm of it);
+ * the plan coordinate or null. `band` (with the mask loaded) measures bands for fitting a closed outline.
+ */
+export type InkSnap = ((p: Vec2, axis: 'x' | 'y', maxCm: number) => number | null) & { band?: BandAt };
+/** Ink bands wider than this (real-world cm) are filled areas, not walls. */
+export const MAX_WALL_CM = 60;
 
 /** Snap radius in SCREEN px: a snap only happens when its target is this close to the cursor, at any zoom. */
 export const SNAP_PX = 10;
@@ -43,7 +50,7 @@ function snapAxis(p: Vec2, axis: 'x' | 'y', srcs: Vec2[], ink: InkSnap | null | 
     if (d <= bd) { bd = d; best = s; }
   }
   const v = ink?.(p, axis, t);
-  const inkOk = v != null && Math.abs(v - p[axis]) <= t;
+  const inkOk = v != null && Math.abs(v - p[axis]) <= t + MAX_WALL_CM / 2; // a band centre: up to half a band beyond its edge
   // The nearer wins; on a tie the exact alignment (so neighbouring rooms share wall lines exactly).
   if (best && (!inkOk || bd <= Math.abs(v - p[axis]))) return { value: best[axis], kind: 'align' as const, src: best };
   return inkOk ? { value: v, kind: 'ink' as const, src: null } : null;
@@ -63,8 +70,25 @@ function crossing(poly: Vec2[], axis: 'x' | 'y', v: number, near: Vec2): { q: Ve
 }
 
 /**
+ * A neighbour's corner targets: on each wall's outer face, level with the wall's two INSIDE corners (not the outer corner).
+ * A room started there continues the neighbour's wall line, so the two rooms' walls line up instead of stepping by a wall.
+ */
+export function facePoints({ inner, outer }: SnapRoom): { p: Vec2; wall: number }[] {
+  const out: { p: Vec2; wall: number }[] = [];
+  for (let i = 0; i < inner.length; i++) {
+    const a = outer[i], b = outer[(i + 1) % outer.length], l2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+    if (!l2) continue;
+    for (const c of [inner[i], inner[(i + 1) % inner.length]]) {
+      const s = ((c.x - a.x) * (b.x - a.x) + (c.y - a.y) * (b.y - a.y)) / l2;
+      out.push({ p: { x: a.x + (b.x - a.x) * s, y: a.y + (b.y - a.y) * s }, wall: i });
+    }
+  }
+  return out;
+}
+
+/**
  * Drawing / corner-drag snapping. Every candidate must lie within SNAP_PX (wall bands: WALL_SNAP_PX) screen px of the cursor; the one that moves the
- * cursor least wins (corners count double so a click near a corner lands on it). Candidates: other rooms' outer corners,
+ * cursor least wins (corners count double so a click near a corner lands on it). Candidates: other rooms' face points (facePoints),
  * their wall bands (→ outer face, so neighbours share one wall), and per-axis alignment / plan ink. With `prev`, a wall within
  * ANGLE_TOL_DEG of horizontal/vertical locks to it (right-angle assist) and only its free coordinate snaps; beyond that the
  * point follows the mouse.
@@ -89,7 +113,10 @@ export function snapPoint({ raw, prev, align, rooms, ink, pxPerCm, free }: SnapI
     const o = projectOnWalls(outer, raw), di = projectOnWalls(inner, raw).distance;
     if (!(o.distance <= tw || di <= tw || (pointInPolygon(raw, outer) && !pointInPolygon(raw, inner)))) continue;
     let q: Vec2 | null, wi = o.wall;
-    if (prev && lock) {
+    const fa = outer[o.wall], fb = outer[(o.wall + 1) % outer.length];
+    if (prev && lock && Math.abs(fa[lock] - prev[lock]) <= WALL_COINCIDE_TOL && Math.abs(fb[lock] - prev[lock]) <= WALL_COINCIDE_TOL) {
+      q = { ...raw, [lock]: prev[lock] }; // drawing along the face itself: stays on it, linked to that wall
+    } else if (prev && lock) {
       const c = crossing(outer, lock, prev[lock], raw);
       q = c && d2(c.q, raw) <= o.distance + di + tw ? c.q : null; // else a far side of the room, not this band
       if (c) wi = c.i;
@@ -102,10 +129,11 @@ export function snapPoint({ raw, prev, align, rooms, ink, pxPerCm, free }: SnapI
     if (q && d2(q, raw) < wd) { wd = d2(q, raw); wall = q; link = { roomId: id, wall: wi }; }
   }
 
-  let corner: Vec2 | null = null, cd = t;
-  for (const r of rooms) for (const c of r.outer) { const d = d2(c, raw); if (d <= cd) { cd = d; corner = c; } }
-  // Corners count double; a locked wall-band hit beats them (a corner off the locked line would bend the wall).
-  if (corner && !(lock && wall)) cands.push({ p: { ...corner }, kind: 'corner', guides: [], d: cd / 2 });
+  let corner: Vec2 | null = null, cd = t, cLink: SnapHit['link'];
+  for (const r of rooms) for (const c of facePoints(r)) { const d = d2(c.p, raw); if (d <= cd) { cd = d; corner = c.p; cLink = { roomId: r.id, wall: c.wall }; } }
+  // A wall-end point is an attach point too (shown as "Attached"); it counts double so a click near it lands on it.
+  // A locked wall-band hit beats it (a point off the locked line would bend the wall).
+  if (corner && !(lock && wall)) cands.push({ p: { ...corner }, kind: 'wall', guides: [], link: cLink, d: cd / 2 });
   if (wall) {
     cands.push({ p: wall, kind: 'wall', guides: [], link, d: wd });
   } else if (prev && lock) {

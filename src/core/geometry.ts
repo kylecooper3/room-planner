@@ -15,13 +15,31 @@ export const rectRoomPoints: RectRoomPoints = (w, l) => [{ x: 0, y: 0 }, { x: w,
 
 export const wallSegments: WallSegments = (pts) => pts.map((a, i) => ({ a, b: pts[(i + 1) % pts.length] }));
 
-const signedArea = (poly: Polygon) => {
+export const signedArea = (poly: Polygon) => {
   let s = 0;
   for (let i = 0; i < poly.length; i++) {
     const p = poly[i], q = poly[(i + 1) % poly.length];
     s += p.x * q.y - q.x * p.y;
   }
   return s / 2;
+};
+
+/**
+ * Drops corners that only split a straight wall (extra clicks along one line): a corner within `tolCm` of the line through
+ * its neighbours, or turning less than `tolDeg`, and lying between them. Repeats until none is left; never below 3 corners.
+ */
+export const mergeCollinear = (pts: Vec2[], tolCm = 2, tolDeg = 4): Vec2[] => {
+  const out = [...pts];
+  for (let i = 0; out.length > 3 && i < out.length; ) {
+    const a = out[(i + out.length - 1) % out.length], p = out[i], b = out[(i + 1) % out.length];
+    const abx = b.x - a.x, aby = b.y - a.y, l = Math.hypot(abx, aby);
+    const t = l ? ((p.x - a.x) * abx + (p.y - a.y) * aby) / (l * l) : 0;
+    const off = l ? Math.abs((p.x - a.x) * aby - (p.y - a.y) * abx) / l : Math.hypot(p.x - a.x, p.y - a.y);
+    const u = Math.atan2(p.y - a.y, p.x - a.x), v = Math.atan2(b.y - p.y, b.x - p.x);
+    const turn = Math.abs(((v - u + 3 * Math.PI) % (2 * Math.PI)) - Math.PI) * (180 / Math.PI);
+    if (t > -1e-9 && t < 1 + 1e-9 && (off < tolCm || turn < tolDeg)) { out.splice(i, 1); i = 0; } else i++;
+  }
+  return out;
 };
 
 export const polygonArea: PolygonArea = (poly) => Math.abs(signedArea(poly));
@@ -282,16 +300,18 @@ export const WALL_COINCIDE_TOL = 0.5, WALL_GAP_MIN = 2, WALL_GAP_MAX = 40;
  * without lying on it: a gap of WALL_GAP_MIN..WALL_GAP_MAX cm, or an overlap into the neighbour. Two walls are attached when
  * either room's line lies on the other's face (within WALL_COINCIDE_TOL); those, and non-parallel walls, are not reported.
  */
+const COS_1DEG = Math.cos((1 * Math.PI) / 180);
+// Edge i: start, length, direction and outward normal (s = the room's orientation, as wallOutline).
+const edge = (poly: Vec2[], i: number, s: number) => {
+  const a = poly[i], b = poly[(i + 1) % poly.length], l = len(sub(b, a));
+  return l < EPS ? null : { a, l, u: { x: (b.x - a.x) / l, y: (b.y - a.y) / l }, n: { x: (s * (b.y - a.y)) / l, y: (-s * (b.x - a.x)) / l } };
+};
+type E = NonNullable<ReturnType<typeof edge>>;
+const dot = (p: Vec2, q: Vec2) => p.x * q.x + p.y * q.y;
+
 export const wallNearMisses = (rooms: { inner: Vec2[]; outer: Vec2[] }[]): WallNearMiss[] => {
   const out: WallNearMiss[] = [];
-  const cosTol = Math.cos((1 * Math.PI) / 180);
-  // Edge i: start, length, direction and outward normal (s = the room's orientation, as wallOutline).
-  const edge = (poly: Vec2[], i: number, s: number) => {
-    const a = poly[i], b = poly[(i + 1) % poly.length], l = len(sub(b, a));
-    return l < EPS ? null : { a, l, u: { x: (b.x - a.x) / l, y: (b.y - a.y) / l }, n: { x: (s * (b.y - a.y)) / l, y: (-s * (b.x - a.x)) / l } };
-  };
-  type E = NonNullable<ReturnType<typeof edge>>;
-  const dot = (p: Vec2, q: Vec2) => p.x * q.x + p.y * q.y;
+  const cosTol = COS_1DEG;
   const at = (e: E, t: number, d = 0) => ({ x: e.a.x + e.u.x * t + e.n.x * d, y: e.a.y + e.u.y * t + e.n.y * d });
   for (let ai = 0; ai < rooms.length; ai++) for (let bi = ai + 1; bi < rooms.length; bi++) {
     const A = rooms[ai], B = rooms[bi];
@@ -309,6 +329,31 @@ export const wallNearMisses = (rooms: { inner: Vec2[]; outer: Vec2[] }[]): WallN
       const lo = Math.max(0, Math.min(t1, t2)), hi = Math.min(face.l, Math.max(t1, t2));
       if (hi - lo < 1) continue; // the walls don't run alongside each other
       out.push({ kind, distance: Math.abs(d), from: { a: at(face, lo, d), b: at(face, hi, d) }, to: { a: at(face, lo), b: at(face, hi) }, wall });
+    }
+  }
+  return out;
+};
+
+/** Two rooms' walls that are one wall: `from`..`to` cm along the owner's wall line (from its start corner). Rooms/walls are indices. */
+export interface SharedStretch { owner: { room: number; wall: number }; other: { room: number; wall: number }; from: number; to: number }
+
+/**
+ * Where a room's wall line lies on a neighbour's wall outer face (parallel, facing, within WALL_COINCIDE_TOL) over at least
+ * 1 cm: the walls are shared there. The room that comes first in `rooms` owns the stretch.
+ */
+export const sharedStretches = (rooms: { inner: Vec2[]; outer: Vec2[] }[]): SharedStretch[] => {
+  const out: SharedStretch[] = [];
+  for (let ai = 0; ai < rooms.length; ai++) for (let bi = ai + 1; bi < rooms.length; bi++) {
+    const A = rooms[ai], B = rooms[bi];
+    if (A.inner.length < 3 || B.inner.length < 3) continue;
+    const sA = signedArea(A.inner) >= 0 ? 1 : -1, sB = signedArea(B.inner) >= 0 ? 1 : -1;
+    for (let i = 0; i < A.inner.length; i++) for (let j = 0; j < B.inner.length; j++) {
+      const lA = edge(A.inner, i, sA), fA = edge(A.outer, i, sA), lB = edge(B.inner, j, sB), fB = edge(B.outer, j, sB);
+      if (!lA || !fA || !lB || !fB || dot(lA.n, lB.n) > -COS_1DEG) continue;
+      if (Math.abs(dot(sub(lA.a, fB.a), fB.n)) > WALL_COINCIDE_TOL && Math.abs(dot(sub(lB.a, fA.a), fA.n)) > WALL_COINCIDE_TOL) continue;
+      const t1 = dot(sub(lB.a, lA.a), lA.u), t2 = t1 + dot(lB.u, lA.u) * lB.l;
+      const from = Math.max(0, Math.min(t1, t2)), to = Math.min(lA.l, Math.max(t1, t2));
+      if (to - from >= 1) out.push({ owner: { room: ai, wall: i }, other: { room: bi, wall: j }, from, to });
     }
   }
   return out;

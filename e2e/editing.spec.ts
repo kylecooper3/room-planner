@@ -121,6 +121,15 @@ test('editing: rotate handle snaps to 15°, duplicate, delete, undo/redo, nudge,
   expect(await activeItems(page)).toHaveLength(6);
 });
 
+test('draw tool: extra clicks along one wall make a single wall, not several corners', async ({ page }) => {
+  await open(page);
+  await page.getByTestId('start-draw').click();
+  for (const [x, y] of [[0, 0], [130, 2], [260, -1], [400, 0], [400, 150], [401, 300], [0, 300]]) await clickPlan(page, x, y);
+  await page.keyboard.press('Enter');
+  const room = await activeRoom(page);
+  expect(room.points.map((p) => [Math.round(p.x), Math.round(p.y)])).toEqual([[0, 0], [400, 0], [400, 300], [0, 300]]);
+});
+
 test('draw tool: L-shaped room with right-angle snapping, Enter closes', async ({ page }) => {
   await open(page);
   await page.getByTestId('start-draw').click();

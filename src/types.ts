@@ -258,7 +258,7 @@ export interface Actions {
   setProjectName(name: string): void;
 
   /** Creates a room with one empty layout, makes it active, returns its id. */
-  addRoom(input: { points: Vec2[]; ceilingHeight?: Cm; name?: string }): string;
+  addRoom(input: { points: Vec2[]; ceilingHeight?: Cm; name?: string; wallThickness?: Cm }): string;
   /** Changing `points` drops/clamps openings that no longer fit their wall. */
   updateRoom(roomId: string, patch: Partial<Omit<Room, 'id' | 'layouts' | 'openings'>>): void;
   deleteRoom(roomId: string): void;

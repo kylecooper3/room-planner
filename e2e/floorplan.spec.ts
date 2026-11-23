@@ -92,7 +92,7 @@ test('floor plan: upload, calibrate by known length, trace + name a room, underl
   await page.evaluate(() => window.__store.getState().updateUnderlay({ opacity: 0.6 }));
 
   // Done (on the plan) → doors step; Finish closes the panel (the toolbar button reopens it).
-  await expect(page.getByTestId('draw-hint')).toContainText('first corner of the next room');
+  await expect(page.getByTestId('draw-hint')).toContainText("plan's wall lines");
   await page.getByTestId('draw-done').click();
   expect((await state(page)).ui.tool).toBe('select');
   await expect(page.getByTestId('floorplan-step-4')).toHaveAttribute('aria-current', 'step');
@@ -238,10 +238,13 @@ test('floor plan: name popover: arrows, click, Esc, clicking on, and Ctrl+Z', as
   await clickImg(page, corners[0][0], corners[0][1]);
   await expect(page.getByTestId('room-name-popover')).toHaveCount(0);
   expect((await state(page)).project.rooms.map((r) => r.name)).toEqual(['Room 1', 'Room 2', 'Room 3']);
-  await expect(page.getByTestId('draw-hint')).toContainText('next corner');
+  await expect(page.getByTestId('draw-hint')).toContainText("plan's wall lines");
+  await expect(page.getByTestId('draw-finish')).toBeVisible(); // a corner placed
   // Esc drops the outline but keeps tracing; Esc again stops.
   await page.keyboard.press('Escape');
-  await expect(page.getByTestId('draw-hint')).toContainText('first corner of the next room');
+  await expect(page.getByTestId('draw-hint')).toContainText("plan's wall lines");
+  await expect(page.getByTestId('draw-finish')).toHaveCount(0);
+  await expect(page.getByTestId('draw-done')).toBeVisible();
   await page.keyboard.press('Escape');
   expect((await state(page)).ui.tool).toBe('select');
 });

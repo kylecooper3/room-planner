@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CM_PER_FOOT, type Room, type Underlay } from '../types';
-import { buildInkMask, inkBoundary, makeInkSnap } from './inkMask';
+import { buildInkMask, fitToInk, inkCentre, makeInkSnap } from './inkMask';
 import { countsTowardArea, derivedStep, isCalibrated, parseArea, scaleToArea, scaleWords } from './traceSession';
 import { emptyProject } from '../store/store';
 
@@ -48,24 +48,47 @@ describe('scale by known area', () => {
 });
 
 describe('ink mask', () => {
-  // 12 px wall at x 88..99 (inner face at x = 100), plus a 1 px furniture line at x = 150 that must be ignored.
+  // 12 px wall at x 88..99 (centre line x = 94), plus a 1 px furniture line at x = 150 that must be ignored.
   const m = buildInkMask(img(200, 100, (x) => (x >= 88 && x < 100) || x === 150));
-  it('finds the nearest wall face along an axis, ignoring thin strokes', () => {
-    expect(inkBoundary(m, 103.4, 50, 'x', 10)).toBe(100);
-    expect(inkBoundary(m, 91, 50, 'x', 10)).toBe(88);
-    expect(inkBoundary(m, 148, 50, 'x', 10)).toBeNull();
-    expect(inkBoundary(m, 103, 50, 'y', 10)).toBeNull();
+  it('finds the centre line of the nearest wall band along an axis, ignoring thin strokes and too-wide fills', () => {
+    expect(inkCentre(m, 103.4, 50, 'x', 10, 48)).toBe(94);
+    expect(inkCentre(m, 91, 50, 'x', 10, 48)).toBe(94);
+    expect(inkCentre(m, 148, 50, 'x', 10, 48)).toBeNull();
+    expect(inkCentre(m, 103, 50, 'y', 10, 48)).toBeNull();
+    expect(inkCentre(m, 103.4, 50, 'x', 10, 11)).toBeNull(); // 12 px is wider than a wall here
   });
   it('maps to plan cm through the underlay', () => {
     const snap = makeInkSnap(m, u);
-    expect(snap({ x: 10 + 103 * 5, y: 20 + 250 }, 'x', 50)).toBe(10 + 100 * 5);
+    expect(snap({ x: 10 + 103 * 5, y: 20 + 250 }, 'x', 50)).toBe(10 + 94 * 5);
   });
 });
 
-describe('ink boundary at a corner', () => {
-  it('finds the inner face even when the line through the point runs inside the perpendicular wall', () => {
+describe('ink band at a corner', () => {
+  it("finds both walls' centre lines where the line through the point runs along the perpendicular wall", () => {
     // Room interior x<100, y<100; walls: x 100..111 (vertical) and y 100..111 (horizontal).
     const m = buildInkMask(img(200, 200, (x, y) => (x >= 100 && x < 112 && y < 112) || (y >= 100 && y < 112 && x < 112)));
-    expect(inkBoundary(m, 100, 97, 'y', 10)).toBe(100);
+    expect(inkCentre(m, 106, 105, 'x', 10, 48)).toBe(106);
+    expect(inkCentre(m, 105, 106, 'y', 10, 48)).toBe(106);
+  });
+});
+
+describe('fitToInk', () => {
+  // Inner rectangle (40,40)-(160,120) inside 12 px walls; 1 cm per px, so plan cm = image px.
+  const m = buildInkMask(img(200, 160, (x, y) => x >= 28 && x < 172 && y >= 28 && y < 132 && !(x >= 40 && x < 160 && y >= 40 && y < 120)));
+  const band = makeInkSnap(m, { ...u, cmPerPx: 1, x: 0, y: 0 }).band!;
+  const mid = [{ x: 34, y: 34 }, { x: 166, y: 34 }, { x: 166, y: 126 }, { x: 34, y: 126 }];
+  const close = (got: { x: number; y: number }[], want: { x: number; y: number }[]) => got.forEach((p, i) => {
+    expect(p.x).toBeCloseTo(want[i].x, 6);
+    expect(p.y).toBeCloseTo(want[i].y, 6);
+  });
+  it('moves walls drawn on the lines onto their inner edges, either winding; thickness = line width', () => {
+    const f = fitToInk(mid, band)!;
+    close(f.points, [{ x: 40, y: 40 }, { x: 160, y: 40 }, { x: 160, y: 120 }, { x: 40, y: 120 }]);
+    expect(f.wallThickness).toBe(12);
+    close(fitToInk([...mid].reverse(), band)!.points, [{ x: 40, y: 120 }, { x: 160, y: 120 }, { x: 160, y: 40 }, { x: 40, y: 40 }]);
+  });
+  it('keeps walls marked to stay; no fit when most walls find no line', () => {
+    close(fitToInk(mid, band, [true])!.points, [{ x: 40, y: 34 }, { x: 160, y: 34 }, { x: 160, y: 120 }, { x: 40, y: 120 }]);
+    expect(fitToInk([{ x: 34, y: 34 }, { x: 166, y: 34 }, { x: 166, y: 80 }, { x: 80, y: 80 }, { x: 80, y: 60 }, { x: 34, y: 60 }].map((p) => ({ x: p.x, y: p.y + 200 })), band)).toBeNull();
   });
 });

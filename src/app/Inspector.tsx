@@ -1,7 +1,7 @@
 import { ChevronRight, CircleCheck, Copy, DoorOpen, Move, RotateCw, Scissors, SquareDashed, SquareSplitHorizontal, Sofa, Spline, Trash, TriangleAlert } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { formatArea, formatLength } from '../core/units';
-import { polygonArea } from '../core/geometry';
+import { polygonArea, sharedStretches } from '../core/geometry';
 import { useActiveRoom, useGetDef, useIssues, useLayout } from '../store/selectors';
 import { useStore } from '../store/store';
 import type { Category, DoorSwing, FloorMaterial, ItemDef, Opening, OpeningKind, PartRole, PlacedItem, Room, UnitSystem } from '../types';
@@ -11,16 +11,13 @@ import { THEME } from '../theme';
 import { useMemo } from 'react';
 import { LengthInput, NumberInput, TextInput } from './inputs';
 import { deleteCorner, normDeg } from './shortcuts';
-import { insertCorner, openGaps, openingsClash, setWallLength, toggleOpenWall, wallJoin } from '../editor2d/wallEdit';
+import { wallOutline } from '../editor2d/view';
+import { insertCorner, MIN_OPENING, OPENING_WIDTH, openGaps, openingsClash, setWallLength, toggleOpenWall, WALL_MARGIN, wallJoin } from '../editor2d/wallEdit';
 
 const s = useStore.getState;
 /** Item positions beyond 100 m from the origin are typos, not furniture. */
 const MAX_COORD = 10_000;
-const MIN_OPENING = 5;
-/** Sane opening widths per kind (cm); the max is further capped at the wall length minus a small margin. */
-const OPENING_WIDTH: Record<OpeningKind, [number, number]> = { door: [60, 200], window: [30, 400], radiator: [30, 300], outlet: [5, 30], open: [10, MAX_COORD] };
 const KIND_NAME: Record<OpeningKind, string> = { door: 'Door', window: 'Window', radiator: 'Radiator', outlet: 'Outlet', open: 'Opening' };
-const WALL_MARGIN = 10;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const wallLength = (room: Room, wall: number) => {
   const a = room.points[wall], b = room.points[(wall + 1) % room.points.length];
@@ -176,9 +173,14 @@ function WallPanel({ room, index, units }: { room: Room; index: number; units: U
   const rooms = useStore((st) => st.project.rooms);
   const planLevel = useStore((st) => !st.ui.roomOpen);
   const join = planLevel ? wallJoin(rooms, room.id, index) : null;
+  const ri = rooms.findIndex((r) => r.id === room.id);
+  const sharedWith = [...new Set(sharedStretches(rooms.map((r) => ({ inner: r.points, outer: wallOutline(r.points, r.wallThickness) })))
+    .flatMap((st) => (st.owner.room === ri && st.owner.wall === index ? [st.other.room] : st.other.room === ri && st.other.wall === index ? [st.owner.room] : []))
+    .map((i) => rooms[i].name))];
   return (
     <>
       <Head kind="Wall" icon={<Spline size={13} />} title={`Wall ${index + 1}`} sub={room.name} />
+      {sharedWith.length > 0 && <p className="app-muted" data-testid="wall-shared">Shared with {sharedWith.join(', ')}</p>}
       <Section title="Length">
       <LengthInput label="Length" value={len} units={units} range={[10, MAX_COORD]} testId="wall-length"
         onCommit={(l) => s().updateRoom(room.id, { points: setWallLength(room.points, index, l) })} />

@@ -59,7 +59,7 @@ test('draw tool: links to an adjacent room wall (one shared wall); panning mid-d
   expect(b.points[2].x).toBe(b.points[1].x);
 });
 
-test('draw tool: corners snap onto the plan wall\'s inner face when clicked 3-4 px off it', async ({ page }) => {
+test('draw tool: corners clicked 3-4 px inside the plan wall snap onto its line; on closing the room fits its inner face', async ({ page }) => {
   await uploadPlan(page, floorPlanPng());
   await page.getByTestId('floorplan-skip-scale').click();
   await page.getByTestId('floorplan-trace').click();
@@ -83,6 +83,44 @@ test('draw tool: corners snap onto the plan wall\'s inner face when clicked 3-4 
     expect(q.x, `corner ${i} x`).toBeCloseTo(want[i].x, 6);
     expect(q.y, `corner ${i} y`).toBeCloseTo(want[i].y, 6);
   });
+});
+
+test('tracing on the wall lines: outer-edge and inner-edge clicks both give a room on the inner edge, walls as thick as the lines', async ({ page }) => {
+  await uploadPlan(page, floorPlanPng());
+  await page.getByTestId('floorplan-skip-scale').click();
+  await page.getByTestId('floorplan-trace').click();
+  await expect(page.getByTestId('draw-hint')).toContainText("Click on the plan's wall lines at each corner");
+  const { x0, y0, x1, y1 } = PLAN.inner, t = PLAN.wall;
+  const p = await (await import('./fixtures')).imgToScreen(page, x0 - t, y0 - t);
+  await expect(async () => { // the ink mask is ready
+    await page.mouse.move(p.x + 1, p.y);
+    await page.mouse.move(p.x, p.y);
+    await expect(page.getByTestId('snap-marker')).toHaveAttribute('data-kind', 'ink', { timeout: 500 });
+  }).toPass();
+  await clickImg(page, x0 - t, y0 - t); // outer edges of the lines…
+  await clickImg(page, x1 + t, y0 - t);
+  await clickImg(page, x1 + t, y1 + t);
+  await clickImg(page, x0, y1); // …and once the inner edge
+  await clickImg(page, x0 - t, y0 - t); // close on the green circle
+  await expect(page.getByTestId('room-name-input')).toBeFocused();
+  const room = await activeRoom(page);
+  const want = [await imgToPlan(page, x0, y0), await imgToPlan(page, x1, y0), await imgToPlan(page, x1, y1), await imgToPlan(page, x0, y1)];
+  room.points.forEach((q, i) => {
+    expect(Math.abs(q.x - want[i].x), `corner ${i} x`).toBeLessThan(1);
+    expect(Math.abs(q.y - want[i].y), `corner ${i} y`).toBeLessThan(1);
+  });
+  const line = t * (await state(page)).project.underlay!.cmPerPx;
+  expect(Math.abs(room.wallThickness - line), `wall ${room.wallThickness} vs line ${line}`).toBeLessThan(1);
+  // Dragging a corner onto the outer edge of the lines snaps it to their middle, then refits it onto the inner edge on release.
+  await page.keyboard.press('Escape'); // name popover
+  await page.keyboard.press('Escape'); // stop drawing
+  await dragPlan(page, want[2], await imgToPlan(page, x1 + t, y1 + t));
+  const dropped = (await activeRoom(page)).points[2];
+  expect(Math.abs(dropped.x - want[2].x), 'dragged corner x').toBeLessThan(1);
+  expect(Math.abs(dropped.y - want[2].y), 'dragged corner y').toBeLessThan(1);
+  await page.keyboard.press('Control+z'); // the drag
+  await page.keyboard.press('Control+z'); // the fitted room was added in one step
+  expect((await state(page)).project.rooms).toHaveLength(0);
 });
 
 test('wall editing: click a wall, type its length (one undo step), split it', async ({ page }) => {

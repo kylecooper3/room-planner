@@ -226,7 +226,7 @@ export async function uploadPlan(page: Page, png: Buffer) {
 /** Traces one room by clicking image-pixel corners, closing it on the first corner's green circle (the name popover opens). */
 export async function traceRoom(page: Page, corners: [number, number][]) {
   if ((await state(page)).ui.tool !== 'draw-room') await page.getByTestId('floorplan-trace').click();
-  await expect(page.getByTestId('draw-hint')).toContainText('first corner');
+  await expect(page.getByTestId('draw-hint')).toContainText('wall lines');
   for (const [x, y] of corners) await clickImg(page, x, y);
   await expect(page.getByTestId('draw-close-target')).toBeVisible();
   await clickImg(page, corners[0][0], corners[0][1]);

@@ -5,10 +5,10 @@ import type { Guide, Issue, ItemDef, ModelPart, Opening, PlacedItem, Room, Vec2 
 import { THEME } from '../theme';
 import { generateModel, withItemColors } from '../models/generate';
 import { useStore } from '../store/store';
-import { useActiveRoom, useGetDef, useIssues, useLayout } from '../store/selectors';
+import { selectActiveRoom, useActiveRoom, useGetDef, useIssues, useLayout } from '../store/selectors';
 import {
   clearancePolygon, clipToConvex, distancesToWalls, doorSwingPolygon, getOpeningGeometry, pointInPolygon, polygonArea, polygonCentroid, projectOnWalls,
-  snapItem, wallNearMisses,
+  sharedStretches, snapItem, wallNearMisses,
 } from '../core/geometry';
 import { formatArea, formatLength } from '../core/units';
 import { UnderlayLayer } from '../floorplan/UnderlayLayer';
@@ -16,11 +16,11 @@ import { CalibrateTool } from '../floorplan/CalibrateTool';
 import { useInkSnap } from '../floorplan/inkMask';
 import { PlanViewContext } from './planContext';
 import type { PlanView } from './planContext';
-import { snapPoint, WALL_SNAP_PX } from './drawSnap';
+import { MAX_WALL_CM, snapPoint, WALL_SNAP_PX } from './drawSnap';
 import type { SnapHit } from './drawSnap';
 import { useDrawRoom } from './drawRoom';
 import { FONT, GUIDE, Label, SnapMarker, pts } from './planShapes';
-import { insertCorner, openingsClash, slideWall, snapSlide, wallJoin, wallNormal } from './wallEdit';
+import { insertCorner, openingsClash, resizeOpening, slideWall, snapSlide, wallJoin, wallNormal } from './wallEdit';
 import {
   bodyColor, boundsOf, clampOffset, dist, fitView, gridStep, openingDefaults, rotationFromPointer, screenToPlan,
   wallOutline, zoomAbout,
@@ -74,9 +74,13 @@ type Gesture =
   | { kind: 'item'; id: string; dx: number; dy: number; batched: boolean }
   | { kind: 'rotate'; id: string; batched: boolean }
   | { kind: 'opening'; id: string; batched: boolean }
+  /** A selected opening's end handle: that end follows the pointer along the wall, the other stays. */
+  | { kind: 'opening-end'; id: string; end: 'a' | 'b'; batched: boolean }
   | { kind: 'corner'; index: number; batched: boolean }
   /** Slides wall `index` along its normal; `points`/`from`: the room and pointer at the press. */
-  | { kind: 'wall'; index: number; sx: number; sy: number; from: Vec2; points: Vec2[]; batched: boolean };
+  | { kind: 'wall'; index: number; sx: number; sy: number; from: Vec2; points: Vec2[]; batched: boolean;
+      /** Other rooms' walls shared with this one (at the press): they slide with it. */
+      partners: { id: string; wall: number; points: Vec2[] }[] };
 
 const add = (a: Vec2, b: Vec2, s = 1): Vec2 => ({ x: a.x + b.x * s, y: a.y + b.y * s });
 
@@ -168,6 +172,8 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
   const underlay = useStore((s) => s.project.underlay);
   const others = rooms.filter((r) => r.id !== room?.id);
   const snapRoom = (r: Room) => ({ id: r.id, inner: r.points, outer: wallOutline(r.points, r.wallThickness) });
+  const shared = useMemo(() => sharedStretches(rooms.map(snapRoom)), [rooms]);
+  const roomIndex = (r: Room) => rooms.findIndex((x) => x.id === r.id);
   // Over a visible plan image (plan and room level): the active room / drawn rooms in full-strength accent, so they stand out from the picture.
   const contrast = !!underlay?.visible;
   const tool = readOnly ? 'select' : ui.tool;
@@ -272,7 +278,13 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
       if (hit.distance * k <= 40 && (!best || hit.distance < best.hit.distance)) best = { r, hit };
     }
     if (!best) return null;
-    const { r, hit } = best;
+    let { r, hit } = best;
+    // Plan level, on a wall another room owns (shared stretch): the opening goes on the owner's wall.
+    for (const s of ui.roomOpen ? [] : shared) {
+      if (s.other.room !== roomIndex(r) || s.other.wall !== hit.wall) continue;
+      const o = rooms[s.owner.room], h = projectOnWalls(o.points, p);
+      if (h.wall === s.owner.wall && h.offset >= s.from && h.offset <= s.to) { r = o; hit = h; break; }
+    }
     const d = openingDefaults(ui.openingKind);
     const a = r.points[hit.wall], b = r.points[(hit.wall + 1) % r.points.length];
     const width = ui.openingKind === 'open' ? Math.min(d.width, dist(a, b)) : d.width;
@@ -313,6 +325,7 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
     const el = e.target as Element;
     const rot = el.closest('[data-testid="rotate-handle"]');
     const corner = el.closest('[data-testid="plan-corner"]');
+    const openingEnd = el.closest('[data-testid="opening-handle"]');
     const opening = el.closest('[data-opening-id]');
     const item = el.closest('[data-item-id]');
     const wall = el.closest('[data-testid="plan-wall"]');
@@ -327,6 +340,8 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
       const index = Number(corner.getAttribute('data-index'));
       st.select({ type: 'corner', index });
       gesture.current = { kind: 'corner', index, batched: false };
+    } else if (openingEnd) {
+      gesture.current = { kind: 'opening-end', id: openingEnd.getAttribute('data-opening')!, end: openingEnd.getAttribute('data-end') as 'a' | 'b', batched: false };
     } else if (opening) {
       const id = opening.getAttribute('data-opening-id')!;
       st.select({ type: 'opening', id });
@@ -339,7 +354,10 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
     } else if (wall) {
       const index = Number(wall.getAttribute('data-wall'));
       st.select({ type: 'wall', index });
-      if (room) gesture.current = { kind: 'wall', index, sx: e.clientX, sy: e.clientY, from: p, points: room.points, batched: false };
+      const ri = room ? roomIndex(room) : -1;
+      const partners = shared.flatMap((s) => (s.owner.room === ri && s.owner.wall === index ? [s.other] : s.other.room === ri && s.other.wall === index ? [s.owner] : []))
+        .map((w) => ({ id: rooms[w.room].id, wall: w.wall, points: rooms[w.room].points }));
+      if (room) gesture.current = { kind: 'wall', index, sx: e.clientX, sy: e.clientY, from: p, points: room.points, batched: false, partners };
     } else {
       st.select(null);
       startPan();
@@ -395,6 +413,14 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
       const a = room.points[hit.wall], b = room.points[(hit.wall + 1) % room.points.length];
       const next = { wall: hit.wall, offset: clampOffset(hit.offset, o.width, dist(a, b)) };
       if (!openingsClash(room.openings, { ...o, ...next })) st.updateOpening(g.id, next);
+    } else if (g.kind === 'opening-end') {
+      const o = room.openings.find((x) => x.id === g.id);
+      if (!o) return;
+      const a = room.points[o.wall], b = room.points[(o.wall + 1) % room.points.length], len = dist(a, b) || 1;
+      const at = ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / len;
+      const next = resizeOpening(o, g.end, at, len);
+      startBatch(g);
+      if (!openingsClash(room.openings, { ...o, ...next })) st.updateOpening(g.id, next);
     } else if (g.kind === 'corner') {
       const hit = snapPoint({
         raw: p, align: room.points.filter((_, i) => i !== g.index), rooms: others.map(snapRoom), ink: inkSnap, pxPerCm: k, free: noSnap(e),
@@ -407,12 +433,15 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
       if (!g.batched && Math.hypot(e.clientX - g.sx, e.clientY - g.sy) <= CLICK_SLOP) return; // still a click: selects the wall
       const nrm = wallNormal(g.points, g.index);
       const raw = (p.x - g.from.x) * nrm.x + (p.y - g.from.y) * nrm.y;
-      const s = noSnap(e) ? { d: raw } : snapSlide(g.points, g.index, raw, others.map(snapRoom), WALL_SNAP_PX / k);
+      const moving = g.partners.map((q) => q.id); // they follow the wall: not snap targets
+      const s = noSnap(e) ? { d: raw } : snapSlide(g.points, g.index, raw, others.filter((r) => !moving.includes(r.id)).map(snapRoom), WALL_SNAP_PX / k);
       const np = slideWall(g.points, g.index, s.d);
       const a = np[g.index], b = np[(g.index + 1) % np.length];
       setCornerSnap(s.link ? { p: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, kind: 'wall', guides: [], link: s.link } : null);
       startBatch(g);
       st.updateRoom(room.id, { points: np });
+      // A shared wall's other side faces the other way: it slides by -d along its own normal.
+      for (const q of g.partners) st.updateRoom(q.id, { points: slideWall(q.points, q.wall, -s.d) });
     }
   };
 
@@ -421,7 +450,20 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
     gesture.current = null;
     if (g?.kind === 'draw') draw.addPoint(g.raw, g.free);
     else if (g?.kind === 'pan' && g.enter) useStore.getState().focusRoom(g.enter);
-    else if (g && g.kind !== 'pan' && g.batched) useStore.getState().endBatch();
+    else if (g && g.kind !== 'pan' && g.batched) {
+      // A corner dropped on a plan wall line sits on its middle: move it to the line's edge that faces into the room (same undo step).
+      const st = useStore.getState(), r = selectActiveRoom(st);
+      if (g.kind === 'corner' && cornerSnap?.kind === 'ink' && inkSnap?.band && r) {
+        const c = polygonCentroid(r.points), q = r.points[g.index], sx = Math.sign(c.x - q.x), sy = Math.sign(c.y - q.y), p = { ...q };
+        // Measure each line a wall-width along it, clear of the crossing where the two lines meet.
+        const rx = sx ? inkSnap.band({ x: q.x, y: q.y + sy * MAX_WALL_CM }, { x: sx, y: 0 }) : null;
+        const ry = sy ? inkSnap.band({ x: q.x + sx * MAX_WALL_CM, y: q.y }, { x: 0, y: sy }) : null;
+        if (rx) p.x += sx * rx.hi;
+        if (ry) p.y += sy * ry.hi;
+        st.updateRoom(r.id, { points: r.points.map((q, i) => (i === g.index ? p : q)) });
+      }
+      st.endBatch();
+    }
     setCornerSnap(null);
     setGuides([]);
     setDragItem(null);
@@ -545,16 +587,38 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
     const n = r.points.length;
     const outer = wallOutline(r.points, r.wallThickness);
     const closed = n >= 3;
+    const ri = roomIndex(r);
     return r.points.map((a, i) => {
       const j = (i + 1) % n;
       if (!closed && j === 0) return null;
       const b = r.points[j];
       // Room level: only the open room is accent; the others stay greyed context.
       const c = contrast && (active || !ui.roomOpen) ? ACCENT : WALL;
-      const poly = <polygon points={pts([a, b, outer[j], outer[i]])} fill={c} stroke={c} strokeWidth={0.5 / k} strokeLinejoin="round" />;
+      const L = dist(a, b) || 1, ux = (b.x - a.x) / L, uy = (b.y - a.y) / L;
+      const band = (q: Vec2[], key: number | string, restyle = false) => <polygon key={key} data-band={restyle ? undefined : ""} points={pts(q)} fill={c} stroke={c} strokeWidth={0.5 / k} strokeLinejoin="round" />;
+      // Stretches another room owns (shared walls): this band is left out there, the owner's band shows the wall once.
+      const cuts = shared.filter((s) => s.other.room === ri && s.other.wall === i).map((s) => {
+        const o = rooms[s.owner.room], oa = o.points[s.owner.wall], ob = o.points[(s.owner.wall + 1) % o.points.length], ol = dist(oa, ob) || 1;
+        const ou = { x: (ob.x - oa.x) / ol, y: (ob.y - oa.y) / ol }, on = wallNormal(o.points, s.owner.wall);
+        const f = add(oa, ou, s.from), t = add(oa, ou, s.to), along = (q: Vec2) => (q.x - a.x) * ux + (q.y - a.y) * uy;
+        return { s0: Math.min(along(f), along(t)), s1: Math.max(along(f), along(t)), ownerBand: [f, t, add(t, on, o.wallThickness), add(f, on, o.wallThickness)] };
+      }).sort((x, y) => x.s0 - y.s0);
+      const nW = wallNormal(r.points, i);
+      const edgeAt = (t: number, out: boolean) => (t <= 0 ? (out ? outer[i] : a) : t >= L ? (out ? outer[j] : b) : add(add(a, { x: ux, y: uy }, t), nW, out ? r.wallThickness : 0));
+      const pieces: [number, number][] = [];
+      let t0 = 0;
+      for (const cut of cuts) { if (cut.s0 > t0) pieces.push([t0, cut.s0]); t0 = Math.max(t0, cut.s1); }
+      if (t0 < L) pieces.push([t0, L]);
+      const poly = (
+        <>
+          {pieces.map(([p0, p1], q) => band([edgeAt(p0, false), edgeAt(p1, false), edgeAt(p1, true), edgeAt(p0, true)], q))}
+          {/* The selected / open room's shared stretch: the owner's band in this room's style, so its wall never looks missing. Active: the whole wall stays grabbable. */}
+          {active && cuts.map((cut, q) => band(cut.ownerBand, `o${q}`, true))}
+          {active && cuts.length > 0 && <polygon points={pts([a, b, outer[j], outer[i]])} fill="transparent" stroke="none" />}
+        </>
+      );
       if (!active) return <g key={i}>{poly}</g>;
       // Dimension line parallel to the wall, outside it: extension lines, 45° ticks, and the interior length on top.
-      const L = dist(a, b) || 1, ux = (b.x - a.x) / L, uy = (b.y - a.y) / L;
       const side = (outer[i].x - a.x) * -uy + (outer[i].y - a.y) * ux >= 0 ? 1 : -1;
       const nrm = { x: -uy * side, y: ux * side };
       const off = r.wallThickness + 18 / k;
@@ -665,6 +729,16 @@ export function PlanEditor({ layoutId, readOnly = false }: PlanEditorProps) {
                 <OpeningSymbol o={o} room={room} k={k} floor={floor} selected={sel?.type === 'opening' && sel.id === o.id} />
               </g>
             ))}
+            {/* The selected opening's two ends: drag one to make it wider or narrower. */}
+            {editable && room && sel?.type === 'opening' && (() => {
+              const o = room.openings.find((x) => x.id === sel.id);
+              if (!o) return null;
+              const g = getOpeningGeometry(room.points, o);
+              return ([['a', g.a], ['b', g.b]] as const).map(([end, q]) => (
+                <circle key={end} data-testid="opening-handle" data-opening={o.id} data-end={end} cx={q.x} cy={q.y} r={6 / k} fill="#ffffff"
+                  stroke={ACCENT} strokeWidth={2 / k} style={{ cursor: 'grab' }}><title>Drag to resize</title></circle>
+              ));
+            })()}
             {flats.map(renderItem)}
             {ui.showClearances && room && (
               <g pointerEvents="none" strokeDasharray={`${5 / k} ${4 / k}`} strokeWidth={1.25 / k}>

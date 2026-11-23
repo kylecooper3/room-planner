@@ -1,4 +1,4 @@
-import type { Actions, Opening, Room, Segment, Vec2 } from '../types';
+import type { Actions, Opening, OpeningKind, Room, Segment, Vec2 } from '../types';
 import type { WallNearMiss } from '../core/geometry';
 import { wallNearMisses } from '../core/geometry';
 import type { SnapRoom } from './drawSnap';
@@ -81,6 +81,26 @@ export function deleteCorner(st: Pick<Actions, 'beginBatch' | 'endBatch' | 'upda
 export function openingsClash(openings: Opening[], o: Pick<Opening, 'kind' | 'wall' | 'offset' | 'width'> & { id?: string }): boolean {
   return openings.some((q) => q.id !== o.id && q.wall === o.wall && (q.kind === 'open' || o.kind === 'open')
     && Math.abs(q.offset - o.offset) < (q.width + o.width) / 2 - 0.5);
+}
+
+export const MIN_OPENING = 5;
+/** Built-in openings (not open gaps) keep this much wall in total. */
+export const WALL_MARGIN = 10;
+/** Sane opening widths per kind (cm); the max is further capped at the wall length (minus WALL_MARGIN, except open gaps). */
+export const OPENING_WIDTH: Record<OpeningKind, [number, number]> = { door: [60, 200], window: [30, 400], radiator: [30, 300], outlet: [5, 30], open: [10, 10_000] };
+
+/**
+ * Drags end `end` of opening `o` (a = toward the wall's start, b = toward its end) to `at` cm along its wall of length `len`;
+ * the other end stays put. The width stays within the kind's range and the opening on its wall.
+ */
+export function resizeOpening(o: Pick<Opening, 'kind' | 'offset' | 'width'>, end: 'a' | 'b', at: number, len: number): { offset: number; width: number } {
+  const [lo, hi] = OPENING_WIDTH[o.kind];
+  const fixed = end === 'a' ? o.offset + o.width / 2 : o.offset - o.width / 2;
+  const room = end === 'a' ? fixed : len - fixed; // wall left on the dragged side
+  const max = Math.max(MIN_OPENING, Math.min(hi, len - (o.kind === 'open' ? 0 : WALL_MARGIN), room));
+  const want = end === 'a' ? fixed - at : at - fixed;
+  const width = Math.min(max, Math.max(Math.min(Math.max(MIN_OPENING, lo), max), want));
+  return { width, offset: end === 'a' ? fixed - width / 2 : fixed + width / 2 };
 }
 
 /** The open gaps on wall i. */

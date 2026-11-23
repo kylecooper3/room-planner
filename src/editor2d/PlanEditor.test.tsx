@@ -40,6 +40,8 @@ vi.mock('../core/geometry', () => ({
   polygonCentroid: (p: { x: number; y: number }[]) => ({ x: p.reduce((a, q) => a + q.x, 0) / p.length, y: p.reduce((a, q) => a + q.y, 0) / p.length }),
   polygonArea: () => 120000,
   wallNearMisses: () => [],
+  sharedStretches: () => [],
+  mergeCollinear: (p: unknown) => p,
   clearancePolygon: () => [],
   clipToConvex: (_room: unknown, zone: unknown) => zone,
   projectOnWalls: () => ({ wall: 0, offset: 0, distance: 0, point: { x: 0, y: 0 } }),

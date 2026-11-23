@@ -14,7 +14,7 @@ describe('snapPoint', () => {
   const base = { align: [] as { x: number; y: number }[], rooms: [] as (typeof sq)[], pxPerCm: 1 };
   it("snaps to another room's corner exactly, before anything else", () => {
     const h = snapPoint({ ...base, raw: { x: 403, y: -4 }, prev: { x: 600, y: 50 }, rooms: [sq] });
-    expect(h).toMatchObject({ p: { x: 400, y: 0 }, kind: 'corner' });
+    expect(h).toMatchObject({ p: { x: 400, y: 0 }, kind: 'wall' }); // a wall-end point: shown as Attached
   });
   it('right angle to the previous point, then aligns the free coordinate with earlier points (with a guide)', () => {
     const h = snapPoint({ ...base, raw: { x: 7, y: 205 }, prev: { x: 200, y: 200 }, align: [{ x: 0, y: 0 }] });
@@ -34,7 +34,7 @@ describe('snapPoint', () => {
       expect(snapPoint({ ...base, raw: { x: 150, y }, prev, rooms: [thick] }), `y ${y}`).toMatchObject({ p: { x: 150, y: -10 }, kind: 'wall' });
     }
     // Along an axis-aligned face the point lines up with the neighbour's inside corner: rooms side by side stay flush.
-    expect(snapPoint({ ...base, raw: { x: 404, y: 6 }, rooms: [thick] })).toMatchObject({ p: { x: 410, y: 0 }, kind: 'wall' });
+    expect(snapPoint({ ...base, raw: { x: 404, y: 6 }, rooms: [thick] }).p).toEqual({ x: 410, y: 0 });
   });
   it('wall linking with the right-angle lock: where the locked line crosses the outer face, exactly level', () => {
     const h = snapPoint({ ...base, raw: { x: -3, y: 52 }, prev: { x: -100, y: 50 }, rooms: [thick] });
@@ -44,9 +44,11 @@ describe('snapPoint', () => {
   it('wall band beats plan ink even when the ink is nearer', () => {
     const ink: InkSnap = (p, axis) => (axis === 'x' ? -2 : null);
     expect(snapPoint({ ...base, raw: { x: -3, y: 52 }, prev: { x: -100, y: 50 }, rooms: [thick], ink })).toMatchObject({ p: { x: -10, y: 50 }, kind: 'wall' });  });
-  it("a neighbour's outer corner attracts like a corner", () => {
-    expect(snapPoint({ ...base, raw: { x: 413, y: -7 }, rooms: [thick] })).toMatchObject({ p: { x: 410, y: -10 }, kind: 'corner' });
-    expect(snapPoint({ ...base, raw: { x: 413, y: -7 }, prev: { x: 700, y: 300 }, rooms: [thick] })).toMatchObject({ p: { x: 410, y: -10 }, kind: 'corner' });
+  it("a neighbour's corner snaps on its outer face level with the INSIDE corner (walls line up), never to the outer corner", () => {
+    // thick: inside corner (400, 0), outer corner (410, -10). Targets: (410, 0) on the right face, (400, -10) on the top face.
+    expect(snapPoint({ ...base, raw: { x: 413, y: 3 }, rooms: [thick] })).toMatchObject({ p: { x: 410, y: 0 }, kind: 'wall', link: { wall: 1 } });
+    expect(snapPoint({ ...base, raw: { x: 403, y: -13 }, prev: { x: 700, y: 300 }, rooms: [thick] })).toMatchObject({ p: { x: 400, y: -10 }, kind: 'wall', link: { wall: 0 } });
+    expect(snapPoint({ ...base, raw: { x: 411, y: -11 }, rooms: [thick] }).p).not.toEqual({ x: 410, y: -10 });
   });
   it('free point: walls of other rooms, else per-axis ink', () => {
     expect(snapPoint({ ...base, raw: { x: 150, y: 306 }, rooms: [sq] })).toMatchObject({ p: { x: 150, y: 300 }, kind: 'wall' });
@@ -56,11 +58,11 @@ describe('snapPoint', () => {
 
   it('the radius is in screen px: the same 9 cm snaps zoomed out but not zoomed in', () => {
     const raw = { x: 409, y: 0 }; // 9 cm from the corner (400, 0)
-    expect(snapPoint({ ...base, raw, rooms: [sq], pxPerCm: 1 }).kind).toBe('corner'); // 9 px
-    expect(snapPoint({ ...base, raw, rooms: [sq], pxPerCm: 0.25 }).kind).toBe('corner'); // 2.25 px
+    expect(snapPoint({ ...base, raw, rooms: [sq], pxPerCm: 1 }).kind).toBe('wall'); // 9 px
+    expect(snapPoint({ ...base, raw, rooms: [sq], pxPerCm: 0.25 }).kind).toBe('wall'); // 2.25 px
     expect(snapPoint({ ...base, raw: { x: 409, y: -9 }, rooms: [sq], pxPerCm: 2 })).toEqual({ p: { x: 409, y: -9 }, kind: null, guides: [] }); // 18 px+
     // Zoomed out, a corner 32 cm away is 8 px: snaps; at 1 px/cm it is 32 px: does not.
-    expect(snapPoint({ ...base, raw: { x: 425, y: -20 }, rooms: [sq], pxPerCm: 0.25 }).kind).toBe('corner');
+    expect(snapPoint({ ...base, raw: { x: 425, y: -20 }, rooms: [sq], pxPerCm: 0.25 }).kind).toBe('wall');
     expect(snapPoint({ ...base, raw: { x: 425, y: -20 }, rooms: [sq], pxPerCm: 1 }).kind).toBe(null);
   });
   it('nothing beyond the radius moves the point, ink included', () => {
@@ -82,9 +84,9 @@ describe('snapPoint', () => {
     expect(snapPoint({ ...base, raw: { x: 150, y: -30 }, rooms: [thick], align: [{ x: 900, y: -29 }], ink })).toMatchObject({ p: { x: 150, y: -10 }, kind: 'wall' });
     expect(snapPoint({ ...base, raw: { x: 150, y: -36 }, rooms: [thick] }).kind).toBe(null); // 26 px: too far
     expect(snapPoint({ ...base, raw: { x: 150, y: -30 }, rooms: [thick], pxPerCm: 2 }).kind).toBe(null); // zoomed in: 40 px
-    // 15 px from the outer corner (410, -10): not a corner snap, the wall (outer face x = 410) takes it.
-    expect(snapPoint({ ...base, raw: { x: 425, y: 0 }, rooms: [thick] })).toMatchObject({ p: { x: 410, y: 0 }, kind: 'wall' });
-    expect(snapPoint({ ...base, raw: { x: 416, y: -6 }, rooms: [thick] })).toMatchObject({ p: { x: 410, y: -10 }, kind: 'corner' });
+    // 15 px from the corner target (410, 0): not a corner snap, the wall (outer face x = 410) takes it.
+    expect(snapPoint({ ...base, raw: { x: 425, y: 30 }, rooms: [thick] })).toMatchObject({ p: { x: 410, y: 30 }, kind: 'wall' });
+    expect(snapPoint({ ...base, raw: { x: 416, y: 4 }, rooms: [thick] })).toMatchObject({ p: { x: 410, y: 0 }, kind: 'wall' });
     expect(snapPoint({ ...base, raw: { x: 150, y: -30 }, rooms: [thick], free: true })).toEqual({ p: { x: 150, y: -30 }, kind: null, guides: [] });
   });
   it('a wall hit says which neighbour wall it linked to', () => {
@@ -92,7 +94,10 @@ describe('snapPoint', () => {
     expect(snapPoint({ ...base, raw: { x: 420, y: 152 }, prev: { x: 700, y: 150 }, rooms: [thick] })).toMatchObject({ // locked
       p: { x: 410, y: 150 }, kind: 'wall', link: { roomId: 'thick', wall: 1 },
     });
-    expect(snapPoint({ ...base, raw: { x: 413, y: -7 }, rooms: [thick] }).link).toBeUndefined(); // corner
+    expect(snapPoint({ ...base, raw: { x: 413, y: 3 }, rooms: [thick] }).link).toEqual({ roomId: 'thick', wall: 1 }); // a wall-end point links too
+    expect(snapPoint({ ...base, raw: { x: 413, y: 150 }, prev: { x: 410, y: 50 }, rooms: [thick] })).toMatchObject({ // locked along the face
+      p: { x: 410, y: 150 }, kind: 'wall', link: { roomId: 'thick', wall: 1 },
+    });
   });
   it('free (Alt held / snapping off) returns the cursor exactly', () => {
     const raw = { x: 401, y: 1 };
