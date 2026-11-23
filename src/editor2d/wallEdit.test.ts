@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { flushDistance, resizeOpening, sharedChain, slideWall, snapSlide, wallJoin, wallNormal } from './wallEdit';
+import { flushDistance, joinToNeighbours, resizeOpening, sharedChain, slideWall, snapSlide, wallJoin, wallNormal } from './wallEdit';
 import { wallOutline } from './view';
 import type { Room, Vec2 } from '../types';
 
@@ -92,5 +92,33 @@ describe('sharedChain', () => {
     ]));
     expect(sharedChain(shared, { room: 1, wall: 3 })).toHaveLength(3);
     expect(sharedChain([], { room: 0, wall: 2 })).toEqual([{ room: 0, wall: 2, sign: 1 }]);
+  });
+});
+
+describe('joinToNeighbours', () => {
+  const sr = (id: string, pts: Vec2[]) => ({ id, inner: pts, outer: wallOutline(pts, 12) });
+  const n = sr('n', box(0, 0, 400, 300)); // its right wall's outer face: x = 412
+  it('lays a wall drawn a little off and askew onto the neighbour face; corners follow', () => {
+    const r = joinToNeighbours([{ x: 420, y: 20 }, { x: 700, y: 20 }, { x: 700, y: 280 }, { x: 415, y: 290 }], [n]);
+    expect(r.joined).toEqual([false, false, false, true]);
+    expect(r.points[0].x).toBeCloseTo(412);
+    expect(r.points[0].y).toBeCloseTo(20);
+    expect(r.points[3].x).toBeCloseTo(412);
+    expect(r.points[1]).toEqual({ x: 700, y: 20 });
+  });
+  it('works on an angled (45°) neighbour wall drawn 3° off', () => {
+    // A room whose top-right corner is cut at 45°: the cut runs (300,0) → (400,100).
+    const cut = sr('cut', [{ x: 0, y: 0 }, { x: 300, y: 0 }, { x: 400, y: 100 }, { x: 400, y: 300 }, { x: 0, y: 300 }]);
+    const d = 12 / Math.SQRT2; // the cut's outer face is 12 cm out along (1,-1)/√2
+    const r = joinToNeighbours([{ x: 310 + 8, y: -8 - 5 }, { x: 600, y: -200 }, { x: 600, y: 100 }, { x: 412, y: 100 - 4 }], [cut]);
+    const i = r.joined.indexOf(true);
+    expect(i).toBeGreaterThanOrEqual(0);
+    const a = r.points[i], b = r.points[(i + 1) % 4];
+    for (const p of [a, b]) expect(p.x - p.y).toBeCloseTo(300 + 2 * d, 5); // on the line x - y = 300 + 12√2
+  });
+  it('leaves walls alone when too far, not facing, or barely alongside', () => {
+    expect(joinToNeighbours(box(460, 0, 700, 300), [n]).joined.every((j) => !j)).toBe(true); // 48 cm away
+    expect(joinToNeighbours(box(20, 20, 380, 280), [n]).joined.every((j) => !j)).toBe(true); // drawn inside it: walls face the same way
+    expect(joinToNeighbours(box(420, 280, 700, 600), [n]).joined.every((j) => !j)).toBe(true); // overlaps only 20 of 320 cm
   });
 });

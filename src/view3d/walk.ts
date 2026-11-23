@@ -1,5 +1,6 @@
 import { isFlat, type ItemDef, type Room, type Vec2 } from '../types';
-import { getOpeningGeometry, itemPolygon } from '../core/geometry';
+import { getOpeningGeometry, itemPolygon, sharedStretches } from '../core/geometry';
+import { wallOutline } from '../editor2d/view';
 import { buildWalls, type WallInfo } from './sceneMath';
 
 /** Walkable, see-through box through a door (plan cm): `dir` runs along the door's wall, `n` across it. */
@@ -18,6 +19,29 @@ export function housePassages(rooms: Pick<Room, 'points' | 'openings' | 'wallThi
       const [bottom, top] = o.kind === 'open' ? [0, Infinity] : [o.sill, o.sill + o.height]; // splitWall clamps to each wall's height
       out.push({ center: g.center, dir: { x: Math.cos(a), y: Math.sin(a) }, n: g.normalIn, halfW: o.width / 2, halfD: maxT + 15, bottom, top });
     }
+  }
+  return out;
+}
+
+/**
+ * Shared walls are built once in 3D, like in 2D: for each room, full-height cut-outs over the stretches of its walls that
+ * another (earlier) room owns, so only the owner's wall stands there. Index = room index; pass each room its own list.
+ */
+export function sharedWallCuts(rooms: Pick<Room, 'points' | 'wallThickness'>[]): Passage[][] {
+  const out: Passage[][] = rooms.map(() => []);
+  for (const s of sharedStretches(rooms.map((r) => ({ inner: r.points, outer: wallOutline(r.points, r.wallThickness) })))) {
+    const o = rooms[s.owner.room], other = rooms[s.other.room];
+    const p = wallOutline(o.points, o.wallThickness), a = p[s.owner.wall], b = p[(s.owner.wall + 1) % p.length];
+    const L = Math.hypot(b.x - a.x, b.y - a.y) || 1, dir = { x: (b.x - a.x) / L, y: (b.y - a.y) / L };
+    // The stretch runs along the owner's outer face (= the other room's wall line), `from`..`to` measured along the owner's wall.
+    const ia = o.points[s.owner.wall], at = (t: number) => ({ x: ia.x + dir.x * t, y: ia.y + dir.y * t });
+    const off = { x: a.x - ia.x, y: a.y - ia.y }, n = { x: -dir.y, y: dir.x };
+    const shift = off.x * n.x + off.y * n.y; // owner inner line → outer face, across the wall
+    const m = at((s.from + s.to) / 2);
+    out[s.other.room].push({
+      center: { x: m.x + n.x * shift, y: m.y + n.y * shift }, dir, n, halfW: (s.to - s.from) / 2,
+      halfD: other.wallThickness + 1, bottom: 0, top: Infinity,
+    });
   }
   return out;
 }

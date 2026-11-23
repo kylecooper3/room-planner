@@ -8,6 +8,7 @@ import { useTrace } from '../floorplan/traceSession';
 import { fitToInk } from '../floorplan/inkMask';
 import { DrawHud, Loupe } from './DrawAids';
 import { RoomNamePopover } from './RoomNamePopover';
+import { joinToNeighbours } from './wallEdit';
 import { cornerAngle, isRightAngle, snapPoint } from './drawSnap';
 import type { InkSnap, SnapHit, SnapRoom } from './drawSnap';
 import { Label, SnapMarker, pts } from './planShapes';
@@ -32,17 +33,21 @@ export function useDrawRoom({ tool, readOnly, cursor, rooms, snapRooms, ink, k, 
   const [drawPts, setDrawPts] = useState<Vec2[]>([]);
   /** The neighbour wall ("roomId:wall") each drawn point was snapped onto. */
   const linkOf = useRef(new WeakMap<Vec2, string>());
+  /** Points placed with snapping off (Alt) stay where clicked: a wall touching one is never joined to a neighbour on close. */
+  const freeOf = useRef(new WeakSet<Vec2>());
   const overPlan = useStore((s) => !!s.project.underlay?.visible);
 
   // ── draw-room tool: stays on after each room (the name popover opens); Done / Esc ends it ──
   const finishDraw = (clicked: Vec2[]) => {
     // Extra clicks along one straight line make a single wall, not several that move separately.
-    const points = mergeCollinear(clicked);
-    if (points.length < 3) return;
+    const merged = mergeCollinear(clicked);
+    if (merged.length < 3) return;
     const st = useStore.getState();
-    // Over a plan image: walls move onto the inner edge of the ink lines they were drawn on (attached walls stay exact).
-    const fit = ink?.band ? fitToInk(points, ink.band, points.map((a, i) => attached(a, points[(i + 1) % points.length]))) : null;
-    st.setUI({ namingRoomId: st.addRoom(fit ? { ...fit, points: mergeCollinear(fit.points) } : { points }) });
+    // Walls drawn roughly along a neighbour's wall are laid exactly onto it (one shared wall), wherever the clicks landed.
+    const { points, joined } = joinToNeighbours(merged, snapRooms, merged.map((a, i) => freeOf.current.has(a) || freeOf.current.has(merged[(i + 1) % merged.length])));
+    // Over a plan image: the other walls move onto the inner edge of the ink lines they were drawn on.
+    const fit = ink?.band ? fitToInk(points, ink.band, joined.map((j, i) => j || attached(points[i], points[(i + 1) % points.length]))) : null;
+    st.setUI({ namingRoomId: st.addRoom({ ...(fit ?? {}), points: mergeCollinear(fit ? fit.points : points) }) });
     setDrawPts([]);
   };
   const doneDraw = () => {
@@ -84,6 +89,7 @@ export function useDrawRoom({ tool, readOnly, cursor, rooms, snapRooms, ink, k, 
     const hit = drawSnap(raw, free), { p, link } = hit;
     if (drawPts.length && dist(p, drawPts[drawPts.length - 1]) < 1e-9) return; // 2nd click of a double-click
     if (link) linkOf.current.set(p, `${link.roomId}:${link.wall}`);
+    if (free) freeOf.current.add(p);
     setDrawPts([...(extendsWall(hit) ? drawPts.slice(0, -1) : drawPts), p]);
   };
 

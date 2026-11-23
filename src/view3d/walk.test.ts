@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Opening, Room, Vec2 } from '../types';
 import { buildWalls } from './sceneMath';
-import { houseColliders, housePassages, moveVector, walkStep, wallColliders, type Collider } from './walk';
+import { houseColliders, housePassages, moveVector, sharedWallCuts, walkStep, wallColliders, type Collider } from './walk';
 
 const rect = (x0: number, y0: number, x1: number, y1: number): Vec2[] => [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
 const box = (x0: number, y0: number, x1: number, y1: number): Collider => ({ pts: rect(x0, y0, x1, y1), minX: x0, maxX: x1, minY: y0, maxY: y1 });
@@ -82,5 +82,18 @@ describe('door passages', () => {
     const p = { x: 200, y: 150 };
     for (let i = 0; i < 60; i++) walkStep(p, 10, 0, c);
     expect(p.x).toBeLessThanOrEqual(400 - 22 + 0.01);
+  });
+});
+
+describe('sharedWallCuts', () => {
+  it('builds a shared wall once: the later room wall is cut out where the earlier room owns it', () => {
+    const [cutsA, cutsB] = sharedWallCuts([A, B]); // B's left wall (x = 412) lies on A's right wall outer face
+    expect(cutsA).toEqual([]);
+    expect(cutsB).toHaveLength(1);
+    const solid = (w: { pieces: { u0: number; u1: number }[] }) => w.pieces.reduce((s, p) => s + p.u1 - p.u0, 0);
+    const bLeft = buildWalls(B, cutsB)[3];
+    expect(solid(bLeft)).toBeLessThan(1); // nothing left of B's shared wall
+    expect(solid(buildWalls(B, cutsB)[1])).toBeGreaterThan(299); // its other walls stay
+    expect(solid(buildWalls(A, cutsA)[1])).toBeGreaterThan(299); // A's (owner) wall stays whole
   });
 });

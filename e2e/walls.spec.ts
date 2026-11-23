@@ -266,3 +266,26 @@ test('dragging a wall shared along a longer wall moves the whole joined wall: th
   await page.keyboard.press('Control+z');
   expect((await roomNamed(page, 'C')).points).toEqual(box(412, 312, 700, 600));
 });
+
+test('a room drawn roughly along a neighbour 45° wall is joined to it on close (one shared wall)', async ({ page }) => {
+  await open(page);
+  // A with its top-right corner cut at 45°: the cut's outer face is the line x - y = 300 + 12√2.
+  await addRoom(page, 'A', [{ x: 0, y: 0 }, { x: 300, y: 0 }, { x: 400, y: 100 }, { x: 400, y: 400 }, { x: 0, y: 400 }]);
+  await page.getByTestId('plan-fit').click();
+  await page.evaluate(() => window.__store.getState().setUI({ tool: 'draw-room' }));
+  await page.getByRole('button', { name: 'Zoom out' }).click(); // room for B beside A
+  const face = 300 + 12 * Math.SQRT2;
+  const click = async (p: Vec2) => { const q = await planToScreen(page, p); await page.mouse.click(q.x, q.y); };
+  // Roughly along the cut but 25–30 cm off it (beyond the snapping reach at this zoom) and askew, then out and back.
+  const out = (p: Vec2, d: number) => ({ x: p.x + d / Math.SQRT2, y: p.y - d / Math.SQRT2 }); // d cm off the cut, outward
+  expect(25 / (await scale(page))).toBeLessThan(25); // the snapping reach here is under 25 cm
+  for (const p of [out({ x: face + 10, y: 10 }, 30), { x: 470, y: 0 }, { x: 470, y: 90 }, out({ x: face + 80, y: 80 }, 25)]) await click(p);
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('room-name-input')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  const b = (await state(page)).project.rooms[1];
+  const onCut = b.points.filter((p) => Math.abs(p.x - p.y - face) < 0.5);
+  expect(onCut).toHaveLength(2); // both ends of B's cut-side wall lie exactly on A's cut face
+  await expect(page.getByTestId('plan-wall-gap')).toHaveCount(0);
+});

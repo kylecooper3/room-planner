@@ -10,7 +10,7 @@ import { clearancePolygon, clipToConvex, doorSwingPolygon } from '../core/geomet
 import { RoomShell, floorShape } from './RoomShell';
 import { OrbitRig, WalkRig, type Bounds, type LockState } from './cameras';
 import { itemRotationY, planToWorld, walkStart } from './sceneMath';
-import { houseColliders, housePassages } from './walk';
+import { houseColliders, housePassages, sharedWallCuts } from './walk';
 import { registerView3d } from './exportPng';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { THEME } from '../theme';
@@ -128,6 +128,8 @@ function Scene({ rooms, activeRoom, layoutId, readOnly, walkMode, top, setCursor
   // Door passages only change with the shell geometry (not with furniture moves), so memoise on that.
   const shellKey = JSON.stringify(rooms.map((r) => [r.points, r.openings, r.wallThickness]));
   const passages = useMemo(() => housePassages(rooms), [shellKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Per room: its door passages plus cut-outs where a neighbour owns the shared wall (built once, as in 2D).
+  const roomPassages = useMemo(() => sharedWallCuts(rooms).map((cuts) => (cuts.length ? [...passages, ...cuts] : passages)), [shellKey, passages]); // eslint-disable-line react-hooks/exhaustive-deps
   const colliders = useMemo(() => (walkMode ? houseColliders(rooms, passages, getDef) : []), [walkMode, rooms, passages, getDef]);
 
   const messages = useMemo(() => {
@@ -169,11 +171,11 @@ function Scene({ rooms, activeRoom, layoutId, readOnly, walkMode, top, setCursor
       <Registrar readOnly={readOnly} />
       <Lights bounds={bounds} />
       <Ground bounds={bounds} />
-      {rooms.map((room) => {
+      {rooms.map((room, ri) => {
         const active = room.id === activeRoom.id;
         return (
           <group key={room.id} name={`room:${room.id}`}>
-            <RoomShell room={room} cutaway={cutaway && !walkMode} passages={passages} onFloorClick={(e) => onFloorClick(e, room.id)} onFloorDoubleClick={onFloorDoubleClick} />
+            <RoomShell room={room} cutaway={cutaway && !walkMode} passages={roomPassages[ri]} onFloorClick={(e) => onFloorClick(e, room.id)} onFloorDoubleClick={onFloorDoubleClick} />
             <RoomItems
               room={room}
               items={active ? activeItems : undefined}

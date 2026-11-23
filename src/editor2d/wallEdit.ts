@@ -223,6 +223,55 @@ export function sharedChain(shared: { owner: { room: number; wall: number }; oth
   return [...seen.values()];
 }
 
+/**
+ * A just-drawn room joins its neighbours: each wall running roughly alongside a neighbour's wall (facing it, within `tolDeg`
+ * and `tolCm` of its outer face at both ends, overlapping it for at least half its length) is laid exactly onto that outer
+ * face, so the two rooms share one wall however the clicks landed. Corners are re-found where neighbouring wall lines meet.
+ * `joined[i]`: wall i was laid onto a neighbour. `skip[i]`: leave wall i as drawn (an end placed with snapping off).
+ */
+export function joinToNeighbours(points: Vec2[], rooms: SnapRoom[], skip: boolean[] = [], tolCm = 40, tolDeg = 6): { points: Vec2[]; joined: boolean[] } {
+  const n = points.length, sin = Math.sin((tolDeg * Math.PI) / 180);
+  const lines = points.map((a, i) => {
+    const b = points[(i + 1) % n], L = Math.hypot(b.x - a.x, b.y - a.y);
+    const u = L > 1e-9 ? { x: (b.x - a.x) / L, y: (b.y - a.y) / L } : { x: 1, y: 0 }, nrm = wallNormal(points, i);
+    let best: { p: Vec2; u: Vec2; score: number } | null = null;
+    for (const r of L > 1e-9 && !skip[i] ? rooms : []) {
+      const m = r.inner.length;
+      for (let w = 0; w < m && m >= 3; w++) {
+        const fa = r.outer[w], fb = r.outer[(w + 1) % m], fl = Math.hypot(fb.x - fa.x, fb.y - fa.y);
+        if (fl < 1e-9) continue;
+        let fu = { x: (fb.x - fa.x) / fl, y: (fb.y - fa.y) / fl };
+        if (Math.abs(u.x * fu.y - u.y * fu.x) > sin) continue; // not (nearly) parallel
+        const ia = r.inner[w], ib = r.inner[(w + 1) % m];
+        const out = { x: (fa.x + fb.x - ia.x - ib.x) / 2, y: (fa.y + fb.y - ia.y - ib.y) / 2 }; // the neighbour's outward side
+        if (out.x * nrm.x + out.y * nrm.y >= 0) continue; // must face this room
+        const off = (p: Vec2) => Math.abs((p.x - fa.x) * fu.y - (p.y - fa.y) * fu.x);
+        if (off(a) > tolCm || off(b) > tolCm) continue;
+        const ta = (a.x - fa.x) * fu.x + (a.y - fa.y) * fu.y, tb = (b.x - fa.x) * fu.x + (b.y - fa.y) * fu.y;
+        const overlap = Math.min(fl, Math.max(ta, tb)) - Math.max(0, Math.min(ta, tb));
+        if (overlap < L / 2) continue;
+        if (fu.x * u.x + fu.y * u.y < 0) fu = { x: -fu.x, y: -fu.y }; // keep this wall's direction
+        const score = overlap - (off(a) + off(b));
+        if (!best || score > best.score) best = { p: fa, u: fu, score };
+      }
+    }
+    return best ? { p: best.p, u: best.u, joined: true } : { p: a, u, joined: false };
+  });
+  const joined = lines.map((l) => l.joined);
+  const out = points.map((p, k) => {
+    const l0 = lines[(k + n - 1) % n], l1 = lines[k];
+    if (!l0.joined && !l1.joined) return p;
+    const cr = l0.u.x * l1.u.y - l0.u.y * l1.u.x;
+    if (Math.abs(cr) < 1e-6) { // straight on: the point onto the joined line
+      const l = l1.joined ? l1 : l0, t = (p.x - l.p.x) * l.u.x + (p.y - l.p.y) * l.u.y;
+      return { x: l.p.x + l.u.x * t, y: l.p.y + l.u.y * t };
+    }
+    const t = ((l1.p.x - l0.p.x) * l1.u.y - (l1.p.y - l0.p.y) * l1.u.x) / cr;
+    return { x: l0.p.x + l0.u.x * t, y: l0.p.y + l0.u.y * t };
+  });
+  return { points: out, joined };
+}
+
 /** "Join walls": when wall i of room `roomId` has a near-miss (wallNearMisses), that mark and the room's points with the wall slid flush. */
 export function wallJoin(rooms: Room[], roomId: string, i: number): { miss: WallNearMiss; points: Vec2[] } | null {
   const ri = rooms.findIndex((r) => r.id === roomId);
